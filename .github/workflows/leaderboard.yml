@@ -1,8 +1,8 @@
 name: Daily leaderboard
 on:
-  schedule:
-    - cron: "15 18 * * *"   # 18:15 UTC = 11:45 PM IST every day
-  workflow_dispatch:         # "Run workflow" button for manual tests
+  repository_dispatch:
+    types: [trigger_leaderboard]   # fired by cron-job.org
+  workflow_dispatch:                # "Run workflow" button for manual tests
 
 jobs:
   post:
