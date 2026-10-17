@@ -33,7 +33,8 @@ def fmt(mins):
 
 
 def load():
-    url = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv&gid={GID}"
+    url = os.environ.get("SHEET_CSV_URL", "").strip() or \
+        f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv&gid={GID}"
     sa_json = os.environ.get("GOOGLE_SA_JSON", "").strip()
     print("Service account secret present:", bool(sa_json))
     if sa_json:
