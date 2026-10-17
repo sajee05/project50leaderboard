@@ -34,18 +34,29 @@ def fmt(mins):
 
 def load():
     url = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv&gid={GID}"
-    sa_json = os.environ.get("GOOGLE_SA_JSON", "")
+    sa_json = os.environ.get("GOOGLE_SA_JSON", "").strip()
+    print("Service account secret present:", bool(sa_json))
     if sa_json:
         import json
         from google.oauth2 import service_account
         from google.auth.transport.requests import AuthorizedSession
         creds = service_account.Credentials.from_service_account_info(
-            json.loads(sa_json), scopes=["https://www.googleapis.com/auth/drive.readonly"])
-        r = AuthorizedSession(creds).get(url, timeout=60)
+            json.loads(sa_json), scopes=["https://www.googleapis.com/auth/spreadsheets.readonly"])
+        s = AuthorizedSession(creds)
+        api = f"https://sheets.googleapis.com/v4/spreadsheets/{SHEET_ID}"
+        meta = s.get(api, params={"fields": "sheets.properties"}, timeout=60)
+        if not meta.ok:
+            raise SystemExit(f"Sheets API error {meta.status_code}: {meta.text}")
+        sheets = [x["properties"] for x in meta.json()["sheets"]]
+        tab = next((p for p in sheets if str(p["sheetId"]) == str(GID)), sheets[0])
+        vals = s.get(f"{api}/values/{requests.utils.quote(chr(39) + tab['title'] + chr(39))}", timeout=60)
+        if not vals.ok:
+            raise SystemExit(f"Sheets API error {vals.status_code}: {vals.text}")
+        rows = vals.json().get("values", [])
     else:
         r = requests.get(url, timeout=60)
-    r.raise_for_status()
-    rows = list(csv.reader(io.StringIO(r.text)))
+        r.raise_for_status()
+        rows = list(csv.reader(io.StringIO(r.text)))
     hdr_i = next(i for i, row in enumerate(rows) if any(c.strip().lower() == "name" for c in row))
     hdr = rows[hdr_i]
     name_c = next(i for i, c in enumerate(hdr) if c.strip().lower() == "name")
