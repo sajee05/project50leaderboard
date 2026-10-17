@@ -29,6 +29,7 @@ def parse_minutes(v):
 
 
 def fmt(mins):
+    mins = int(round(mins))
     return f"{mins // 60}:{mins % 60:02d}"
 
 
