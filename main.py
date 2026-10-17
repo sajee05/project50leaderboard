@@ -2,7 +2,6 @@
 import csv, io, os, re, sys, html, datetime as dt
 from zoneinfo import ZoneInfo
 import requests
-from playwright.sync_api import sync_playwright
 
 SHEET_ID = os.environ.get("SHEET_ID", "1ZlfTZ0e6oC65e85KXr-X6ZzuL4GQa-r5AcqCsQNCNeU")
 GID = os.environ.get("SHEET_GID", "0")
@@ -11,10 +10,13 @@ CHAT_ID = os.environ.get("CHAT_ID", "-1004340341673")      # from t.me/c/4340341
 THREAD_ID = os.environ.get("THREAD_ID", "1150")            # from .../1150
 DAILY_TARGET_H = float(os.environ.get("DAILY_TARGET_H", "8"))
 WEEKLY_TARGET_H = float(os.environ.get("WEEKLY_TARGET_H", "50"))
+ONTRACK_AVG_H = float(os.environ.get("ONTRACK_AVG_H", "8"))   # avg/day >= this -> ON TRACK
+ATRISK_AVG_H = float(os.environ.get("ATRISK_AVG_H", "7"))     # avg/day >= this -> AT RISK, else UNLIKELY
 DAY_OVERRIDE = os.environ.get("DAY")                       # optional: force day number (1-7)
 DRY = "--dry" in sys.argv
 
 
+# ---------- parsing ----------
 def parse_minutes(v):
     v = (v or "").strip().lower()
     if not v or v in {"-", "off", "—"}:
@@ -33,7 +35,32 @@ def fmt(mins):
     return f"{mins // 60}:{mins % 60:02d}"
 
 
-def load():
+def parse_date(s):
+    for f in ("%Y-%m-%d", "%d/%m/%Y", "%m/%d/%Y", "%d-%m-%Y", "%B %d, %Y", "%d %B %Y", "%d %b %Y"):
+        try:
+            return dt.datetime.strptime(s.strip(), f).date()
+        except ValueError:
+            pass
+    return None
+
+
+def find_cycle_start(rows):
+    env = os.environ.get("CYCLE_START", "").strip()
+    if env:
+        return parse_date(env)
+    for row in rows:
+        for i, c in enumerate(row):
+            if c.strip().lower().startswith("cycle start"):
+                for nxt in row[i + 1:]:
+                    if nxt.strip():
+                        d = parse_date(nxt)
+                        if d:
+                            return d
+                        break
+    return None
+
+
+def fetch_rows():
     url = os.environ.get("SHEET_CSV_URL", "").strip() or \
         f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv&gid={GID}"
     sa_json = os.environ.get("GOOGLE_SA_JSON", "").strip()
@@ -54,11 +81,13 @@ def load():
         vals = s.get(f"{api}/values/{requests.utils.quote(chr(39) + tab['title'] + chr(39))}", timeout=60)
         if not vals.ok:
             raise SystemExit(f"Sheets API error {vals.status_code}: {vals.text}")
-        rows = vals.json().get("values", [])
-    else:
-        r = requests.get(url, timeout=60)
-        r.raise_for_status()
-        rows = list(csv.reader(io.StringIO(r.text)))
+        return vals.json().get("values", [])
+    r = requests.get(url, timeout=60)
+    r.raise_for_status()
+    return list(csv.reader(io.StringIO(r.text)))
+
+
+def parse(rows):
     hdr_i = next(i for i, row in enumerate(rows) if any(c.strip().lower() == "name" for c in row))
     hdr = rows[hdr_i]
     name_c = next(i for i, c in enumerate(hdr) if c.strip().lower() == "name")
@@ -73,111 +102,169 @@ def load():
         raw = [row[c] if c < len(row) else "" for c in day_cols]
         mins = [parse_minutes(x) for x in raw]
         people.append({"name": name, "raw": raw, "mins": mins, "total": sum(mins)})
-    labels = [hdr[c].strip() for c in day_cols]
-    return people, labels
+    start = find_cycle_start(rows)
+    n = len(day_cols)
+    dates = [start + dt.timedelta(days=i) for i in range(n)] if start else None
+    return people, dates, n
 
 
-def pick_day(people, n_days):
+def pick_day(people, n_days, dates=None, now=None):
     if DAY_OVERRIDE:
         return int(DAY_OVERRIDE) - 1
+    if dates:  # follow the real calendar date: 17 Oct with cycle start 12 Oct -> Day 6
+        return max(0, min(n_days - 1, (now.date() - dates[0]).days))
     for d in range(n_days - 1, -1, -1):
         if any(p["mins"][d] for p in people):
             return d
     return 0
 
 
-def cls_day(m):
-    return "g" if m >= DAILY_TARGET_H * 60 else "a" if m >= DAILY_TARGET_H * 30 else "r"
+def status_of(total, avg):
+    if total >= WEEKLY_TARGET_H * 60:
+        return "DONE", "done"
+    if avg >= ONTRACK_AVG_H * 60:
+        return "ON TRACK", "on"
+    if avg >= ATRISK_AVG_H * 60:
+        return "AT RISK", "risk"
+    return "UNLIKELY", "no"
 
 
-def cls_week(m):
-    return "g" if m >= WEEKLY_TARGET_H * 48 else "a" if m >= WEEKLY_TARGET_H * 12 else "r"
+# ---------- image ----------
+CSS = """
+*{box-sizing:border-box}
+body{margin:0;padding:34px;width:1180px;background:#f6f7fb;color:#111827;
+ font-family:Inter,'Segoe UI','Liberation Sans',Arial,sans-serif}
+.head{display:flex;justify-content:space-between;align-items:flex-end;margin-bottom:18px}
+h1{margin:0;font-size:32px;letter-spacing:-.5px}
+.sub{color:#6b7280;font-size:16px;margin-top:4px}
+.pill{background:#111827;color:#fff;border-radius:999px;padding:8px 16px;font-size:15px;font-weight:600}
+.cards{display:flex;gap:18px;margin-bottom:20px}
+.card{flex:1;background:#fff;border-radius:16px;padding:16px 20px;box-shadow:0 1px 3px rgba(0,0,0,.08)}
+.card h2{margin:0 0 10px;font-size:15px;text-transform:uppercase;letter-spacing:1px;color:#6b7280}
+.top{display:flex;align-items:center;padding:6px 0;font-size:20px}
+.top .nm{flex:1;font-weight:700;margin-left:12px}.top .tm{font-weight:800;font-variant-numeric:tabular-nums}
+.badge{width:30px;height:30px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;
+ font-weight:800;font-size:15px;color:#111827;background:#e5e7eb}
+.b1{background:#fbbf24}.b2{background:#d1d5db}.b3{background:#e0a46b}
+table{width:100%;border-collapse:separate;border-spacing:0;background:#fff;border-radius:16px;overflow:hidden;
+ box-shadow:0 1px 3px rgba(0,0,0,.08);font-size:17px}
+th{background:#111827;color:#fff;padding:11px 6px;font-size:14px;font-weight:600;line-height:1.25}
+th small{display:block;font-weight:400;opacity:.65;font-size:12px}
+th.today{background:#2563eb}
+td{padding:7px 6px;text-align:center;border-bottom:1px solid #eef0f4;font-variant-numeric:tabular-nums}
+tr:nth-child(even) td{background:#fafbfd}
+td.nm{text-align:left;font-weight:700;padding-left:8px}
+td.rk{width:46px}
+td.col-today{box-shadow:inset 2px 0 0 #bfdbfe,inset -2px 0 0 #bfdbfe}
+.c{display:inline-block;min-width:58px;padding:3px 0;border-radius:8px;font-weight:600}
+.g{background:#d1fae5;color:#065f46}.a{background:#fef3c7;color:#92400e}.r{background:#fee2e2;color:#991b1b}
+.z{color:#c0c4cc}.off{color:#9ca3af;font-style:italic}
+td.tot{text-align:left;min-width:150px;padding-left:12px}
+.tot b{font-size:18px}
+.bar{height:7px;background:#e5e7eb;border-radius:4px;margin-top:5px;overflow:hidden}
+.bar i{display:block;height:100%;border-radius:4px}
+.s-done{background:#10b981}.s-on{background:#3b82f6}.s-risk{background:#f59e0b}.s-no{background:#ef4444}
+.st{display:inline-block;min-width:104px;padding:5px 0;border-radius:8px;font-weight:800;font-size:14px;letter-spacing:.3px}
+.st.done{background:#d1fae5;color:#065f46}.st.on{background:#dbeafe;color:#1e40af}
+.st.risk{background:#fef3c7;color:#92400e}.st.no{background:#fee2e2;color:#991b1b}
+tr.sum td{background:#f3f4f6;font-weight:800;border-bottom:none}
+.legend{margin-top:14px;font-size:14px;color:#6b7280;display:flex;justify-content:space-between}
+"""
 
 
-def build_html(people, labels, today, now):
+def build_html(people, dates, n_days, today, now):
+    wt = int(WEEKLY_TARGET_H * 60)
+    dtm = int(DAILY_TARGET_H * 60)
+    elapsed = today + 1
+    for p in people:
+        p["avg"] = p["total"] / elapsed
+        p["status"], p["scls"] = status_of(p["total"], p["avg"])
     ranked = sorted(people, key=lambda p: -p["total"])
-    wt = WEEKLY_TARGET_H * 60
-    dt_ = DAILY_TARGET_H * 60
-    head = "".join(f"<th>Day {i+1}<br><small>{html.escape(re.sub(r'(?i)day\s*\d+\s*', '', l))}</small></th>"
-                   for i, l in enumerate(labels))
-    body = ""
+    e = html.escape
+
+    def dlabel(i):
+        return dates[i].strftime("%d %b") if dates else ""
+
+    head = "".join(
+        f"<th class='{'today' if d == today else ''}'>Day {d + 1}<small>{dlabel(d)}</small></th>"
+        for d in range(n_days))
+
+    rows = ""
     for i, p in enumerate(ranked, 1):
-        medal = {1: "gold", 2: "silver", 3: "bronze"}.get(i, "")
         cells = ""
-        for d, raw in enumerate(p["raw"]):
-            txt = fmt(p["mins"][d]) if p["mins"][d] else (raw.strip() or "-")
-            hi = " today" if d == today else ""
-            cells += f"<td class='day{hi}'>{html.escape(txt)}</td>"
-        short = max(0, wt - p["total"])
-        done = p["total"] >= wt
-        body += (f"<tr><td class='rk {medal}'>{i}</td><td class='nm'>{html.escape(p['name'])}</td>"
-                 f"<td class='tg'>{DAILY_TARGET_H:g}h</td>{cells}<td><b>{fmt(p['total'])}</b></td>"
-                 f"<td class='tg'>{WEEKLY_TARGET_H:g}h</td><td class='sb'>{'-' if done else fmt(short)}</td>"
-                 f"<td class='{'ok' if done else 'no'}'>{'DONE' if done else 'NOT MET'}</td></tr>")
-    tot_cells = "".join(f"<td>{fmt(sum(p['mins'][d] for p in people))}</td>" for d in range(len(labels)))
-    body += (f"<tr class='tot'><td></td><td>TOTAL</td><td>-</td>{tot_cells}"
-             f"<td>{fmt(sum(p['total'] for p in people))}</td><td>{WEEKLY_TARGET_H * len(people):g}h</td><td></td><td></td></tr>")
+        for d in range(n_days):
+            m, raw = p["mins"][d], p["raw"][d].strip()
+            ct = " col-today" if d == today else ""
+            if m > 0:
+                k = "g" if m >= dtm else "a" if m >= dtm / 2 else "r"
+                inner = f"<span class='c {k}'>{fmt(m)}</span>"
+            elif raw.lower() == "off":
+                inner = "<span class='off'>off</span>"
+            else:
+                inner = "<span class='z'>&ndash;</span>"
+            cells += f"<td class='{ct.strip()}'>{inner}</td>"
+        pct = min(100, p["total"] / wt * 100)
+        rows += (
+            f"<tr><td class='rk'><span class='badge b{i if i <= 3 else 0}'>{i}</span></td>"
+            f"<td class='nm'>{e(p['name'])}</td>{cells}"
+            f"<td class='tot'><b>{fmt(p['total'])}</b><span style='color:#9ca3af'> / {WEEKLY_TARGET_H:g}h</span>"
+            f"<div class='bar'><i class='s-{p['scls']}' style='width:{pct:.1f}%'></i></div></td>"
+            f"<td>{fmt(p['avg'])}</td>"
+            f"<td><span class='st {p['scls']}'>{p['status']}</span></td></tr>")
+    tot_cells = "".join(f"<td>{fmt(sum(p['mins'][d] for p in people))}</td>" for d in range(n_days))
+    rows += (f"<tr class='sum'><td></td><td class='nm'>Group total</td>{tot_cells}"
+             f"<td class='tot'>{fmt(sum(p['total'] for p in people))}</td><td></td><td></td></tr>")
+
+    def top3(items, key):
+        out = ""
+        for i, p in enumerate(items[:3], 1):
+            out += (f"<div class='top'><span class='badge b{i}'>{i}</span>"
+                    f"<span class='nm'>{e(p['name'])}</span><span class='tm'>{fmt(key(p))}</span></div>")
+        return out
 
     by_day = sorted(people, key=lambda p: -p["mins"][today])
-    dmax = max(dt_ * 1.5, by_day[0]["mins"][today])
-    day_bars = "".join(
-        f"<div class='row'><span>{html.escape(p['name'])}</span><div class='tr'><div class='bar {cls_day(p['mins'][today])}' "
-        f"style='width:{p['mins'][today] / dmax * 100:.1f}%'></div><i style='left:{dt_ / dmax * 100:.1f}%'></i></div>"
-        f"<b>{fmt(p['mins'][today]) if p['mins'][today] else 'Off'}</b></div>" for p in by_day)
-    wk_bars = "".join(
-        f"<div class='row'><span>{html.escape(p['name'])}</span><div class='tr'><div class='bar {cls_week(p['total'])}' "
-        f"style='width:{min(100, p['total'] / wt * 100):.1f}%'></div></div><b>{fmt(p['total'])}</b></div>" for p in ranked)
-
-    title_date = now.strftime("%d %b %Y")
-    return f"""<html><head><meta charset='utf-8'><style>
-body{{margin:0;padding:28px;background:#fff;font-family:Inter,Segoe UI,Arial,sans-serif;width:1500px;color:#111}}
-h1{{font-size:26px;margin:0 0 14px}} table{{border-collapse:collapse;width:100%;font-size:17px}}
-th{{background:#1f2937;color:#fff;padding:8px 6px;font-size:15px}} th small{{font-weight:400}}
-td{{border:1px solid #cbd5e1;padding:7px 8px;text-align:center}} td.nm{{text-align:left;font-weight:600}}
-td.day{{background:#fef7d6}} td.day.today{{background:#fde68a;font-weight:700}} td.tg{{color:#1d4ed8;font-weight:700}}
-td.sb{{background:#e0e7ff}} td.ok{{background:#c6f6d5;color:#166534;font-weight:700}} td.no{{background:#fecaca;color:#991b1b;font-weight:700}}
-td.rk.gold{{background:#ffd700}} td.rk.silver{{background:#e5e5e5}} td.rk.bronze{{background:#e8b887}}
-tr.tot td{{background:#d9d9d9;font-weight:700}}
-.charts{{display:flex;gap:28px;margin-top:26px}} .card{{flex:1;border:1px solid #cbd5e1;border-radius:10px;padding:14px 18px}}
-.card h2{{font-size:18px;margin:0 0 10px;text-align:center}} .row{{display:flex;align-items:center;margin:4px 0;font-size:15px}}
-.row span{{width:110px;text-align:right;padding-right:10px}} .row b{{width:60px;padding-left:8px}}
-.tr{{flex:1;height:18px;position:relative;background:#f1f5f9}} .bar{{height:100%}} .g{{background:#2ca02c}} .a{{background:#f0a500}} .r{{background:#d62728}}
-.tr i{{position:absolute;top:-3px;bottom:-3px;border-left:2px dashed #111}}
-.legend{{font-size:13px;color:#555;margin-top:8px;text-align:center}}
-</style></head><body>
-<h1>Weekly Study Accountability Tracker - {title_date}</h1>
-<table><tr><th>Rank</th><th>Name</th><th>Daily<br>Target</th>{head}<th>Weekly<br>Total</th><th>Weekly<br>Target</th><th>Short<br>By</th><th>Result</th></tr>{body}</table>
-<div class='charts'>
-<div class='card'><h2>Day {today + 1}: hours vs {DAILY_TARGET_H:g}h daily target</h2>{day_bars}
-<div class='legend'>green = met target | amber = 4-8h | red = under 4h</div></div>
-<div class='card'><h2>Weekly total vs {WEEKLY_TARGET_H:g}h goal</h2>{wk_bars}
-<div class='legend'>green = 80%+ | amber = 20-80% | red = under 20%</div></div>
-</div></body></html>"""
+    day_title = f"Day {today + 1}" + (f" &middot; {dates[today].strftime('%d %b')}" if dates else "")
+    cycle = f"{dates[0].strftime('%d %b')} &ndash; {dates[-1].strftime('%d %b')}" if dates else ""
+    return f"""<html><head><meta charset='utf-8'><style>{CSS}</style></head><body>
+<div class='head'><div><h1>Study Accountability Tracker</h1>
+<div class='sub'>Daily target {DAILY_TARGET_H:g}h &middot; Weekly target {WEEKLY_TARGET_H:g}h &middot; Updated {now.strftime('%d %b %Y')}</div></div>
+<div class='pill'>{cycle} &nbsp;|&nbsp; Day {elapsed} of {n_days}</div></div>
+<div class='cards'>
+<div class='card'><h2>Top 3 &middot; {day_title}</h2>{top3(by_day, lambda p: p['mins'][today])}</div>
+<div class='card'><h2>Top 3 &middot; This week</h2>{top3(ranked, lambda p: p['total'])}</div></div>
+<table><tr><th>#</th><th style='text-align:left'>Name</th>{head}<th>Weekly total</th><th>Avg/day</th><th>Status</th></tr>{rows}</table>
+<div class='legend'><span>Day cells: green = {DAILY_TARGET_H:g}h+ &middot; amber = {DAILY_TARGET_H / 2:g}-{DAILY_TARGET_H:g}h &middot; red = under {DAILY_TARGET_H / 2:g}h</span>
+<span>DONE = {WEEKLY_TARGET_H:g}h &middot; ON TRACK = avg {ONTRACK_AVG_H:g}h+ &middot; AT RISK = avg {ATRISK_AVG_H:g}h+ &middot; UNLIKELY = below</span></div>
+</body></html>"""
 
 
+# ---------- caption (Telegram HTML) ----------
 def caption(people, today, now):
+    e = html.escape
     td = sorted(people, key=lambda p: -p["mins"][today])[:3]
     wk = sorted(people, key=lambda p: -p["total"])[:3]
     d = now.day
     suffix = "th" if 10 <= d % 100 <= 20 else {1: "st", 2: "nd", 3: "rd"}.get(d % 10, "th")
     date_s = f"{d}{suffix} {now.strftime('%B, %A')}"
-    t = lambda i: f"#{i+1} {td[i]['name']} - {fmt(td[i]['mins'][today])}"
-    w = lambda i: f"#{i+1} {wk[i]['name']} - {fmt(wk[i]['total'])}"
+    medals = ["🥇", "🥈", "🥉"]
+    t = "\n".join(f"{medals[i]} #{i + 1} {e(p['name'])} - <b>{fmt(p['mins'][today])}</b>" for i, p in enumerate(td))
+    w = "\n".join(f"{medals[i]} #{i + 1} {e(p['name'])} - <b>{fmt(p['total'])}</b>" for i, p in enumerate(wk))
     best = list(dict.fromkeys([td[0]["name"], wk[0]["name"], wk[1]["name"]]))
-    return (f"{date_s}. Y'all did great :)\n"
-            f"Top 3 Today {t(0)} {t(1)} {t(2)}\n"
-            f"And Top 3 this week {w(0)} {w(1)} {w(2)}\n"
-            f"highest chance of making it to the list in the group = {', '.join(best)}")
+    return (f"<b>{date_s}</b>. Y'all did great :)\n\n"
+            f"<b>Top 3 Today</b>\n{t}\n\n"
+            f"<b>Top 3 this week</b>\n{w}\n\n"
+            f"<b>Highest chance of making it to the list in the group</b> = <b>{e(', '.join(best))}</b>")
 
 
 def main():
+    from playwright.sync_api import sync_playwright
     now = dt.datetime.now(ZoneInfo("Asia/Kolkata"))
-    people, labels = load()
-    today = pick_day(people, len(labels))
-    page_html = build_html(people, labels, today, now)
+    people, dates, n_days = parse(fetch_rows())
+    today = pick_day(people, n_days, dates, now)
+    page_html = build_html(people, dates, n_days, today, now)
     with sync_playwright() as pw:
         b = pw.chromium.launch()
-        pg = b.new_page(viewport={"width": 1560, "height": 900}, device_scale_factor=1.5)
+        pg = b.new_page(viewport={"width": 1250, "height": 900}, device_scale_factor=2)
         pg.set_content(page_html)
         pg.screenshot(path="leaderboard.png", full_page=True)
         b.close()
@@ -187,7 +274,7 @@ def main():
         return
     r = requests.post(
         f"https://api.telegram.org/bot{BOT_TOKEN}/sendPhoto",
-        data={"chat_id": CHAT_ID, "message_thread_id": THREAD_ID, "caption": cap},
+        data={"chat_id": CHAT_ID, "message_thread_id": THREAD_ID, "caption": cap, "parse_mode": "HTML"},
         files={"photo": open("leaderboard.png", "rb")}, timeout=60)
     print(r.status_code, r.text)
     r.raise_for_status()
