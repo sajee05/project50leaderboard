@@ -268,7 +268,9 @@ def caption(people, today, now):
 
 def main():
     from playwright.sync_api import sync_playwright
-    now = dt.datetime.now(ZoneInfo("Asia/Kolkata"))
+    # The study day runs 11:45 PM -> 11:45 PM (IST). Shifting the clock back 23h45m maps:
+    # 11:45 PM on 17 Oct (or a late start after midnight) -> 17 Oct; 8:40 PM on 17 Oct -> 16 Oct.
+    now = dt.datetime.now(ZoneInfo("Asia/Kolkata")) - dt.timedelta(hours=23, minutes=45)
     people, dates, n_days = parse(fetch_rows())
     today = pick_day(people, n_days, dates, now)
     page_html = build_html(people, dates, n_days, today, now)
