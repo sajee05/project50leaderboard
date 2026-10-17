@@ -1,4 +1,4 @@
-"""Daily study leaderboard: Google Sheet -> HTML -> PNG -> Telegram topic."""
+"""Daily study leaderboard: Google Sheet -> HTML -> PNG (16:9) -> Telegram topic."""
 import csv, io, os, re, sys, html, datetime as dt
 from zoneinfo import ZoneInfo
 import requests
@@ -129,113 +129,123 @@ def status_of(total, avg):
     return "UNLIKELY", "no"
 
 
-# ---------- image ----------
-CSS = """
-*{box-sizing:border-box}
-body{margin:0;padding:34px;width:1180px;background:#f6f7fb;color:#111827;
- font-family:Inter,'Segoe UI','Liberation Sans',Arial,sans-serif}
-.head{display:flex;justify-content:space-between;align-items:flex-end;margin-bottom:18px}
-h1{margin:0;font-size:32px;letter-spacing:-.5px}
-.sub{color:#6b7280;font-size:16px;margin-top:4px}
-.pill{background:#111827;color:#fff;border-radius:999px;padding:8px 16px;font-size:15px;font-weight:600}
-.cards{display:flex;gap:18px;margin-bottom:20px}
-.card{flex:1;background:#fff;border-radius:16px;padding:16px 20px;box-shadow:0 1px 3px rgba(0,0,0,.08)}
-.card h2{margin:0 0 10px;font-size:15px;text-transform:uppercase;letter-spacing:1px;color:#6b7280}
-.top{display:flex;align-items:center;padding:6px 0;font-size:20px}
-.top .nm{flex:1;font-weight:700;margin-left:12px}.top .tm{font-weight:800;font-variant-numeric:tabular-nums}
-.badge{width:30px;height:30px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;
- font-weight:800;font-size:15px;color:#111827;background:#e5e7eb}
-.b1{background:#fbbf24}.b2{background:#d1d5db}.b3{background:#e0a46b}
-table{width:100%;border-collapse:separate;border-spacing:0;background:#fff;border-radius:16px;overflow:hidden;
- box-shadow:0 1px 3px rgba(0,0,0,.08);font-size:17px}
-th{background:#111827;color:#fff;padding:11px 6px;font-size:14px;font-weight:600;line-height:1.25}
-th small{display:block;font-weight:400;opacity:.65;font-size:12px}
-th.today{background:#2563eb}
-td{padding:7px 6px;text-align:center;border-bottom:1px solid #eef0f4;font-variant-numeric:tabular-nums}
-tr:nth-child(even) td{background:#fafbfd}
-td.nm{text-align:left;font-weight:700;padding-left:8px}
-td.rk{width:46px}
-td.col-today{box-shadow:inset 2px 0 0 #bfdbfe,inset -2px 0 0 #bfdbfe}
-.c{display:inline-block;min-width:58px;padding:3px 0;border-radius:8px;font-weight:600}
-.g{background:#d1fae5;color:#065f46}.a{background:#fef3c7;color:#92400e}.r{background:#fee2e2;color:#991b1b}
-.z{color:#c0c4cc}.off{color:#9ca3af;font-style:italic}
-td.tot{text-align:left;min-width:150px;padding-left:12px}
-.tot b{font-size:18px}
-.bar{height:7px;background:#e5e7eb;border-radius:4px;margin-top:5px;overflow:hidden}
-.bar i{display:block;height:100%;border-radius:4px}
-.s-done{background:#10b981}.s-on{background:#3b82f6}.s-risk{background:#f59e0b}.s-no{background:#ef4444}
-.st{display:inline-block;min-width:104px;padding:5px 0;border-radius:8px;font-weight:800;font-size:14px;letter-spacing:.3px}
-.st.done{background:#d1fae5;color:#065f46}.st.on{background:#dbeafe;color:#1e40af}
-.st.risk{background:#fef3c7;color:#92400e}.st.no{background:#fee2e2;color:#991b1b}
-tr.sum td{background:#f3f4f6;font-weight:800;border-bottom:none}
-.legend{margin-top:14px;font-size:14px;color:#6b7280;display:flex;justify-content:space-between}
-"""
+# ---------- image: 16:9, Today (left) | This week (right) ----------
+CSS = """*{box-sizing:border-box}
+:root{--bg:#f5f5f7;--card:#fff;--tx:#1d1d1f;--mu:#86868b;--chip:#f2f2f5;--ln:#efeff2;--tk:#ececf0;
+--tdy:rgba(10,132,255,.07);--gb:rgba(52,199,89,.16);--gt:#17803a;--ab:rgba(255,159,10,.18);--at:#b25e00;
+--rb:rgba(255,59,48,.13);--rt:#c4271c;--bb:rgba(10,132,255,.13);--bt:#0a63c9}
+body{margin:0;width:1920px;height:1080px;padding:34px;background:var(--bg);color:var(--tx);
+font-family:-apple-system,'SF Pro Display',Inter,'Helvetica Neue','Liberation Sans',Arial,sans-serif;
+display:flex;flex-direction:column;gap:14px}
+.wrap{flex:1;display:flex;gap:22px;min-height:0}
+.panel{background:var(--card);border-radius:30px;padding:26px 30px 14px;display:flex;flex-direction:column;box-shadow:0 2px 24px rgba(0,0,0,.05)}
+.pl{width:680px}.pr{flex:1}
+.ph{display:flex;justify-content:space-between;align-items:flex-start}h1{margin:0;font-size:42px;letter-spacing:-1.1px}
+.sub{font-size:17px;color:var(--mu);margin-top:3px}
+.pill{background:var(--tx);color:var(--bg);border-radius:999px;padding:8px 16px;font-size:15px;font-weight:600;margin-top:6px}
+.chips{display:flex;gap:10px;margin:14px 0 10px}
+.chip{flex:1;background:var(--chip);border-radius:16px;padding:10px 14px;display:flex;align-items:center;font-size:19px}
+.chip:first-child{background:var(--tx);color:var(--bg)}.cn{flex:1;font-weight:700;margin-left:10px}.ct{font-weight:800;font-variant-numeric:tabular-nums}
+.bd{width:26px;height:26px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;background:var(--chip);color:var(--tx);flex:none;margin-right:4px}
+.chip:first-child .bd{background:var(--bg);color:var(--tx)}
+.b1{background:#fbbf24!important;color:#1d1d1f!important}.b2{background:#d1d5db!important;color:#1d1d1f!important}.b3{background:#e0a46b!important;color:#1d1d1f!important}
+.th,.row{display:flex;align-items:center}
+.th{font-size:13px;color:var(--mu);font-weight:600;height:40px;border-bottom:1px solid var(--ln)}
+.th small,.dc small{display:block;font-weight:400;font-size:11px;opacity:.7}
+.row{flex:1;border-bottom:1px solid var(--ln);font-size:18px;max-height:42px}.row.sum{font-weight:800;border-bottom:none}
+.nm{width:130px;font-weight:600}.pr .nm{width:112px}
+.dc{width:70px;text-align:center;flex:none;padding:2px 0}.dc.tdy{background:var(--tdy);border-radius:10px}.th .dc.tdy{color:#0a84ff;font-weight:700}
+.c{display:inline-block;min-width:56px;padding:3px 0;border-radius:8px;font-weight:600;font-size:16px;font-variant-numeric:tabular-nums}
+.c.g,.tm.g{background:var(--gb);color:var(--gt)}.c.a,.tm.a{background:var(--ab);color:var(--at)}.c.r,.tm.r{background:var(--rb);color:var(--rt)}
+.z{color:var(--mu);opacity:.5;font-style:normal}.off{color:var(--mu);font-size:14px}
+.tr{flex:1;height:10px;border-radius:5px;background:var(--tk);margin:0 16px;position:relative}.tr i{display:block;height:100%;border-radius:5px}
+.fg{background:#34c759}.fa{background:#ff9f0a}.fr{background:#ff3b30}
+.tm{width:80px;text-align:center;font-weight:700;border-radius:8px;padding:3px 0;font-variant-numeric:tabular-nums}
+.tm.z{background:none}.row.sum .tm{background:none;color:var(--tx)}
+.tot{width:190px;padding-left:14px;flex:none}.tot b{font-size:19px}.tot em{font-style:normal;color:var(--mu);font-size:14px}
+.pb{display:block;height:6px;background:var(--tk);border-radius:3px;margin-top:4px;overflow:hidden}.pb i{display:block;height:100%}
+.sdone{background:#34c759}.son{background:#0a84ff}.srisk{background:#ff9f0a}.sno{background:#ff3b30}
+.av{width:78px;text-align:center;flex:none;font-variant-numeric:tabular-nums}.stw{width:124px;text-align:center;flex:none}
+.st{display:inline-block;min-width:104px;padding:5px 0;border-radius:8px;font-size:13px;font-weight:800;letter-spacing:.3px}
+.st.done{background:var(--gb);color:var(--gt)}.st.on{background:var(--bb);color:var(--bt)}
+.st.risk{background:var(--ab);color:var(--at)}.st.no{background:var(--rb);color:var(--rt)}
+.legend{display:flex;justify-content:space-between;font-size:14px;color:var(--mu);padding:0 8px}"""
 
 
 def build_html(people, dates, n_days, today, now):
-    wt = int(WEEKLY_TARGET_H * 60)
+    e = html.escape
     dtm = int(DAILY_TARGET_H * 60)
+    wt = int(WEEKLY_TARGET_H * 60)
     elapsed = today + 1
     for p in people:
         p["avg"] = p["total"] / elapsed
-        p["status"], p["scls"] = status_of(p["total"], p["avg"])
-    ranked = sorted(people, key=lambda p: -p["total"])
-    e = html.escape
+        p["st"], p["sc"] = status_of(p["total"], p["avg"])
+    day = sorted(people, key=lambda p: -p["mins"][today])
+    wk = sorted(people, key=lambda p: -p["total"])
 
-    def dlabel(i):
-        return dates[i].strftime("%d %b") if dates else ""
+    def k(x):
+        return "g" if x >= dtm else "a" if x >= dtm / 2 else "r"
 
-    head = "".join(
-        f"<th class='{'today' if d == today else ''}'>Day {d + 1}<small>{dlabel(d)}</small></th>"
-        for d in range(n_days))
+    def dstr(d, f):
+        return dates[d].strftime(f) if dates else ""
 
-    rows = ""
-    for i, p in enumerate(ranked, 1):
+    def chips(items):
+        return "".join(
+            f"<div class='chip'><span class='bd b{i}'>{i}</span><span class='cn'>{e(nm)}</span><span class='ct'>{v}</span></div>"
+            for i, (nm, v) in enumerate(items, 1))
+
+    # left: today
+    lrows = ""
+    for i, p in enumerate(day, 1):
+        x = p["mins"][today]
+        pct = min(100, x / dtm * 100)  # bar is full at the daily target (8h+)
+        lrows += (f"<div class='row'><span class='bd b{i if i <= 3 else 0}'>{i}</span><span class='nm'>{e(p['name'])}</span>"
+                  f"<span class='tr'><i class='f{k(x) if x else 'g'}' style='width:{pct:.1f}%'></i></span>"
+                  f"<span class='tm {k(x) if x else 'z'}'>{fmt(x) if x else '&ndash;'}</span></div>")
+    lrows += (f"<div class='row sum'><span class='bd'></span><span class='nm'>Group total</span>"
+              f"<span class='tr' style='background:none'></span><span class='tm'>{fmt(sum(p['mins'][today] for p in people))}</span></div>")
+    day_sub = (dstr(today, "%A, %d %b") + " &middot; " if dates else "") + f"Day {today + 1} of {n_days} &middot; target {DAILY_TARGET_H:g}h"
+    left = (f"<div class='panel pl'><div class='ph'><div><h1>Today</h1><div class='sub'>{day_sub}</div></div></div>"
+            f"<div class='chips'>{chips([(p['name'], fmt(p['mins'][today])) for p in day[:3]])}</div>"
+            f"<div class='th'><span style='width:30px'></span><span style='width:130px'>Name</span>"
+            f"<span style='flex:1'>Hours &middot; bar is full at {DAILY_TARGET_H:g}h</span></div>{lrows}</div>")
+
+    # right: week
+    hd = "".join(f"<span class='dc{' tdy' if d == today else ''}'>Day {d + 1}<small>{dstr(d, '%d %b')}</small></span>"
+                 for d in range(n_days))
+    rrows = ""
+    for i, p in enumerate(wk, 1):
         cells = ""
         for d in range(n_days):
-            m, raw = p["mins"][d], p["raw"][d].strip()
-            ct = " col-today" if d == today else ""
-            if m > 0:
-                k = "g" if m >= dtm else "a" if m >= dtm / 2 else "r"
-                inner = f"<span class='c {k}'>{fmt(m)}</span>"
+            x, raw = p["mins"][d], p["raw"][d].strip()
+            t = " tdy" if d == today else ""
+            if x:
+                inner = f"<b class='c {k(x)}'>{fmt(x)}</b>"
             elif raw.lower() == "off":
-                inner = "<span class='off'>off</span>"
+                inner = "<i class='off'>off</i>"
             else:
-                inner = "<span class='z'>&ndash;</span>"
-            cells += f"<td class='{ct.strip()}'>{inner}</td>"
-        pct = min(100, p["total"] / wt * 100)
-        rows += (
-            f"<tr><td class='rk'><span class='badge b{i if i <= 3 else 0}'>{i}</span></td>"
-            f"<td class='nm'>{e(p['name'])}</td>{cells}"
-            f"<td class='tot'><b>{fmt(p['total'])}</b><span style='color:#9ca3af'> / {WEEKLY_TARGET_H:g}h</span>"
-            f"<div class='bar'><i class='s-{p['scls']}' style='width:{pct:.1f}%'></i></div></td>"
-            f"<td>{fmt(p['avg'])}</td>"
-            f"<td><span class='st {p['scls']}'>{p['status']}</span></td></tr>")
-    tot_cells = "".join(f"<td>{fmt(sum(p['mins'][d] for p in people))}</td>" for d in range(n_days))
-    rows += (f"<tr class='sum'><td></td><td class='nm'>Group total</td>{tot_cells}"
-             f"<td class='tot'>{fmt(sum(p['total'] for p in people))}</td><td></td><td></td></tr>")
+                inner = "<i class='z'>&ndash;</i>"
+            cells += f"<span class='dc{t}'>{inner}</span>"
+        pct = min(100, p["total"] / wt * 100)  # bar is full at the weekly target (50h+)
+        rrows += (f"<div class='row'><span class='bd b{i if i <= 3 else 0}'>{i}</span><span class='nm'>{e(p['name'])}</span>{cells}"
+                  f"<span class='tot'><b>{fmt(p['total'])}</b><em> / {WEEKLY_TARGET_H:g}h</em>"
+                  f"<span class='pb'><i class='s{p['sc']}' style='width:{pct:.1f}%'></i></span></span>"
+                  f"<span class='av'>{fmt(p['avg'])}</span><span class='stw'><b class='st {p['sc']}'>{p['st']}</b></span></div>")
+    gt = "".join(f"<span class='dc'>{fmt(sum(p['mins'][d] for p in people))}</span>" for d in range(n_days))
+    rrows += (f"<div class='row sum'><span class='bd'></span><span class='nm'>Group total</span>{gt}"
+              f"<span class='tot'><b>{fmt(sum(p['total'] for p in people))}</b></span><span class='av'></span><span class='stw'></span></div>")
+    cycle = f"{dstr(0, '%d %b')} &ndash; {dstr(n_days - 1, '%d %b')} &middot; " if dates else ""
+    right = (f"<div class='panel pr'><div class='ph'><div><h1>This week</h1>"
+             f"<div class='sub'>Weekly target {WEEKLY_TARGET_H:g}h &middot; Updated {now.strftime('%d %b %Y')}</div></div>"
+             f"<div class='pill'>{cycle}Day {elapsed} of {n_days}</div></div>"
+             f"<div class='chips'>{chips([(p['name'], fmt(p['total'])) for p in wk[:3]])}</div>"
+             f"<div class='th'><span style='width:30px'></span><span style='width:112px'>Name</span>{hd}"
+             f"<span class='tot'>Weekly total</span><span class='av'>Avg/day</span><span class='stw'>Status</span></div>{rrows}</div>")
 
-    def top3(items, key):
-        out = ""
-        for i, p in enumerate(items[:3], 1):
-            out += (f"<div class='top'><span class='badge b{i}'>{i}</span>"
-                    f"<span class='nm'>{e(p['name'])}</span><span class='tm'>{fmt(key(p))}</span></div>")
-        return out
-
-    by_day = sorted(people, key=lambda p: -p["mins"][today])
-    day_title = f"Day {today + 1}" + (f" &middot; {dates[today].strftime('%d %b')}" if dates else "")
-    cycle = f"{dates[0].strftime('%d %b')} &ndash; {dates[-1].strftime('%d %b')}" if dates else ""
-    return f"""<html><head><meta charset='utf-8'><style>{CSS}</style></head><body>
-<div class='head'><div><h1>Study Accountability Tracker</h1>
-<div class='sub'>Daily target {DAILY_TARGET_H:g}h &middot; Weekly target {WEEKLY_TARGET_H:g}h &middot; Updated {now.strftime('%d %b %Y')}</div></div>
-<div class='pill'>{cycle} &nbsp;|&nbsp; Day {elapsed} of {n_days}</div></div>
-<div class='cards'>
-<div class='card'><h2>Top 3 &middot; {day_title}</h2>{top3(by_day, lambda p: p['mins'][today])}</div>
-<div class='card'><h2>Top 3 &middot; This week</h2>{top3(ranked, lambda p: p['total'])}</div></div>
-<table><tr><th>#</th><th style='text-align:left'>Name</th>{head}<th>Weekly total</th><th>Avg/day</th><th>Status</th></tr>{rows}</table>
-<div class='legend'><span>Day cells: green = {DAILY_TARGET_H:g}h+ &middot; amber = {DAILY_TARGET_H / 2:g}-{DAILY_TARGET_H:g}h &middot; red = under {DAILY_TARGET_H / 2:g}h</span>
-<span>DONE = {WEEKLY_TARGET_H:g}h &middot; ON TRACK = avg {ONTRACK_AVG_H:g}h+ &middot; AT RISK = avg {ATRISK_AVG_H:g}h+ &middot; UNLIKELY = below</span></div>
-</body></html>"""
+    legend = (f"<div class='legend'><span>Day cells: green = {DAILY_TARGET_H:g}h+ &middot; amber = {DAILY_TARGET_H / 2:g}&ndash;{DAILY_TARGET_H:g}h &middot; red = under {DAILY_TARGET_H / 2:g}h</span>"
+              f"<span>DONE = {WEEKLY_TARGET_H:g}h &middot; ON TRACK = avg {ONTRACK_AVG_H:g}h+ &middot; AT RISK = avg {ATRISK_AVG_H:g}h+ &middot; UNLIKELY = below</span></div>")
+    return (f"<!doctype html><html><head><meta charset='utf-8'><style>{CSS}</style></head>"
+            f"<body><div class='wrap'>{left}{right}</div>{legend}</body></html>")
 
 
 # ---------- caption (Telegram HTML) ----------
@@ -264,9 +274,9 @@ def main():
     page_html = build_html(people, dates, n_days, today, now)
     with sync_playwright() as pw:
         b = pw.chromium.launch()
-        pg = b.new_page(viewport={"width": 1250, "height": 900}, device_scale_factor=2)
+        pg = b.new_page(viewport={"width": 1920, "height": 1080}, device_scale_factor=1.25)
         pg.set_content(page_html)
-        pg.screenshot(path="leaderboard.png", full_page=True)
+        pg.screenshot(path="leaderboard.png")
         b.close()
     cap = caption(people, today, now)
     print(cap)
