@@ -46,3 +46,15 @@ The monthly board is computed from them.
 
 Secrets: `BOT_TOKEN`, `SHEET_CSV_URL` and/or `GOOGLE_SA_JSON`, optional `ALERT_CHAT_ID` (defaults to the admin ID).
 Message the bot once (`/start`) so it can DM you.
+
+
+## Scheduling without Telegram Premium
+
+Telegram's repeating scheduled messages need Premium, so the Worker has its own free cron triggers.
+In Cloudflare: Worker > Settings > Triggers > Cron Triggers > Add, one per line (UTC):
+
+| Cron | Runs | IST |
+|---|---|---|
+| `25 18 * * *` | `/daily` | every night 23:55 |
+| `40 18 * * 0` | `/weekly` | Monday 00:10 |
+| `30 3 1 * *` | `/monthly` | 1st of the month, 09:00 |

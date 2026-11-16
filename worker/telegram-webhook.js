@@ -8,7 +8,35 @@
 //   ADMIN_IDS (variable)     7574436736   (comma separated for several admins)
 const COMMANDS = ["/daily", "/today", "/leaderboard", "/rerun", "/yesterday", "/weekly", "/monthly", "/show"];
 
+// Scheduled commands (Worker > Settings > Triggers > Cron Triggers; times are UTC, shown here in IST).
+// The cron text must match one of these exactly.
+const SCHEDULE = {
+  "25 18 * * *": "/daily",    // every night 23:55 IST
+  "40 18 * * 0": "/weekly",   // Sunday 18:40 UTC = Monday 00:10 IST
+  "30 3 1 * *": "/monthly",   // 1st of the month, 09:00 IST
+};
+
 export default {
+  async scheduled(event, env, ctx) {
+    const cmd = SCHEDULE[event.cron];
+    if (!cmd) return;
+    const admin = (env.ADMIN_IDS || "7574436736").split(",")[0].trim();
+    const id = Number(admin);
+    const upd = { update_id: 0, message: { message_id: 0, date: Math.floor(Date.now() / 1000),
+      from: { id }, chat: { id, type: "private" }, text: cmd } };
+    const gh = await fetch(`https://api.github.com/repos/${env.REPO}/dispatches`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${env.GH_TOKEN}`, Accept: "application/vnd.github+json", "User-Agent": "leaderboard-worker" },
+      body: JSON.stringify({ event_type: "telegram_update", client_payload: { update: upd } }),
+    });
+    if (gh.status !== 204) {
+      await fetch(`https://api.telegram.org/bot${env.BOT_TOKEN}/sendMessage`, {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ chat_id: id, text: `Scheduled ${cmd} could not start (GitHub said ${gh.status}). Send ${cmd} by hand.` }),
+      });
+    }
+  },
+
   async fetch(req, env, ctx) {
     if (req.method !== "POST") return new Response("ok");
     if (req.headers.get("X-Telegram-Bot-Api-Secret-Token") !== env.WEBHOOK_SECRET) {
