@@ -330,15 +330,20 @@ def target(chat=None):
     return {"chat_id": chat} if chat else {"chat_id": CHAT_ID, "message_thread_id": THREAD_ID}
 
 
+POSTED = [0]   # counts posts that reached Telegram, so a retry never repeats something already sent
+
+
 def send_photo(png, cap, chat=None):
     with open(png, "rb") as f:
         tg("sendPhoto", data={**target(chat), "caption": cap, "parse_mode": "HTML"}, files={"photo": f})
+    POSTED[0] += 1
 
 
 def send_video(mp4, cap, chat=None, seconds=15):
     with open(mp4, "rb") as f:
         tg("sendVideo", data={**target(chat), "caption": cap, "parse_mode": "HTML", "supports_streaming": "true",
                               "width": 1920, "height": 1080, "duration": int(seconds)}, files={"video": f})
+    POSTED[0] += 1
 
 
 def dm(chat, text, markup=None):
@@ -568,36 +573,51 @@ def run_board(on_date, chat_for_reply=None, label=""):
         dm(chat_for_reply, f"Posted {label or 'the leaderboard'} to the group.")
 
 
+def run_action(a, chat):
+    if a["do"] == "today":
+        run_board(None, chat, "today's leaderboard")
+    elif a["do"] == "yesterday":
+        run_board(board_date() - dt.timedelta(days=1), chat, "yesterday's leaderboard")
+    elif a["do"] == "weekly":
+        dm(chat, weekly_run(force=a.get("force")))
+    elif a["do"] == "monthly":
+        dm(chat, monthly_run())
+    elif a["do"] == "show":
+        specimen(chat)
+    elif a["do"] == "rerun":
+        d = dt.date.fromisoformat(a["date"])
+        if a["mode"] == "weekly":
+            dm(chat, weekly_run(force=True, on_date=d))
+        elif a["mode"] == "monthly":
+            dm(chat, monthly_run())
+        else:
+            run_board(d, chat, f"the {d.strftime('%d %b')} leaderboard")
+
+
+RETRY_WAITS = [45, 120]   # seconds before the 2nd and 3rd attempt
+
+
 def process():
     import json
     for a in json.load(open("actions.json")):
         chat = a.get("chat") or ALERT_CHAT_ID
-        try:
-            if a["do"] == "today":
-                run_board(None, chat, "today's leaderboard")
-            elif a["do"] == "yesterday":
-                run_board(board_date() - dt.timedelta(days=1), chat, "yesterday's leaderboard")
-            elif a["do"] == "weekly":
-                dm(chat, weekly_run(force=a.get("force")))
-            elif a["do"] == "monthly":
-                dm(chat, monthly_run())
-            elif a["do"] == "show":
-                specimen(chat)
-            elif a["do"] == "rerun":
-                d = dt.date.fromisoformat(a["date"])
-                if a["mode"] == "weekly":
-                    dm(chat, weekly_run(force=True, on_date=d))
-                elif a["mode"] == "monthly":
-                    dm(chat, monthly_run())
-                else:
-                    run_board(d, chat, f"the {d.strftime('%d %b')} leaderboard")
-        except Exception as ex:  # tell the admin, with a Rerun button that remembers the exact day
-            print("action failed:", a, ex)
-            bd = board_date()
-            cb = {"today": f"rr:day:{bd}", "yesterday": f"rr:day:{bd - dt.timedelta(days=1)}",
-                  "weekly": f"rr:weekly:{bd}", "monthly": f"rr:monthly:{bd}"}.get(a["do"])
-            dm(chat, f"<code>/{html.escape(a['do'])}</code> failed: {html.escape(str(ex))[:300]}",
-               [[{"text": "🔁 Rerun", "callback_data": cb}]] if cb else None)
+        for attempt in range(len(RETRY_WAITS) + 1):
+            before = POSTED[0]
+            try:
+                run_action(a, chat)
+                break
+            except Exception as ex:
+                print(f"action failed (attempt {attempt + 1}):", a, ex)
+                # retry only while nothing has been posted yet, so a half-finished run is never duplicated
+                if attempt < len(RETRY_WAITS) and POSTED[0] == before and a["do"] != "show":
+                    time.sleep(RETRY_WAITS[attempt])
+                    continue
+                bd = board_date()   # tell the admin, with a Rerun button that remembers the exact day
+                cb = {"today": f"rr:day:{bd}", "yesterday": f"rr:day:{bd - dt.timedelta(days=1)}",
+                      "weekly": f"rr:weekly:{bd}", "monthly": f"rr:monthly:{bd}"}.get(a["do"])
+                dm(chat, f"<code>/{html.escape(a['do'])}</code> failed after {attempt + 1} attempt(s): {html.escape(str(ex))[:300]}",
+                   [[{"text": "🔁 Rerun", "callback_data": cb}]] if cb else None)
+                break
 
 
 def main():

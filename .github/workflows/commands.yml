@@ -1,6 +1,6 @@
 name: Bot commands
 # The bot reads messages sent to it by an admin (ADMIN_IDS, default 7574436736); everyone else is ignored.
-# Schedule these in Telegram itself (long-press send > Schedule message > Repeat), no cron site needed.
+# Scheduled by the Cloudflare Worker's cron triggers (see README); you can also send any of these by hand.
 #   /daily      post today's leaderboard to the group        (/today, /leaderboard, /rerun are the same)
 #   /yesterday  post yesterday's leaderboard to the group
 #   /weekly     archive the finished cycle + post the weekly podium video   (/weekly force = even mid-cycle)
@@ -36,8 +36,8 @@ jobs:
           if [ "${{ github.event_name }}" = "repository_dispatch" ]; then python main.py --update; else python main.py --poll; fi
       - if: steps.poll.outputs.has == 'true'
         run: |
-          pip install playwright google-auth && playwright install --with-deps chromium
-          sudo apt-get install -y -qq ffmpeg
+          for i in 1 2 3; do pip install playwright google-auth && playwright install --with-deps chromium && break || sleep 20; done
+          for i in 1 2 3; do sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg && break || sleep 20; done
       - if: steps.poll.outputs.has == 'true'
         run: python main.py --process
       - if: steps.poll.outputs.has == 'true'
