@@ -16,7 +16,7 @@ DAY_OVERRIDE = os.environ.get("DAY")                       # optional: force day
 ADMIN_IDS = {int(x) for x in re.split(r"[,\s]+", os.environ.get("ADMIN_IDS", "7574436736")) if x.strip()}  # Telegram user IDs allowed to run commands
 DRY = "--dry" in sys.argv
 BASE_H = 1080          # 16:9 canvas height; it only grows when there are too many rows to fit
-MIN_ROW, MAX_ROW = 32, 60   # row height limits in px (zoom out / zoom in)
+MIN_ROW, MAX_ROW = 32, 84   # row height limits in px (zoom out / zoom in)
 OVERHEAD = 317         # px of the canvas used by everything except the rows (calibrated)
 
 
@@ -157,7 +157,7 @@ display:flex;flex-direction:column;gap:14px}
 .th{font-size:13px;color:var(--mu);font-weight:600;height:40px;border-bottom:1px solid var(--ln)}
 .th small,.dc small{display:block;font-weight:400;font-size:11px;opacity:.7}
 .row{flex:none;height:var(--rh,42px);border-bottom:1px solid var(--ln);font-size:calc(18px*var(--f,1))}.row.sum{font-weight:800;border-bottom:none}
-.nm{width:130px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding-right:6px}.pr .nm{width:112px}
+.nm{width:150px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding-right:6px}.pr .nm{width:140px}
 .dc{width:70px;text-align:center;flex:none;padding:2px 0}.dc.tdy{background:var(--tdy);border-radius:10px}.th .dc.tdy{color:#0a84ff;font-weight:700}
 .c{display:inline-block;min-width:56px;padding:calc(3px*var(--f,1)) 0;border-radius:8px;font-weight:600;font-size:calc(16px*var(--f,1));font-variant-numeric:tabular-nums}
 .c.g,.tm.g{background:var(--gb);color:var(--gt)}.c.a,.tm.a{background:var(--ab);color:var(--at)}.c.r,.tm.r{background:var(--rb);color:var(--rt)}
@@ -228,9 +228,9 @@ def build_html(people, dates, n_days, today, now, stamp="Updated"):
     lrows += (f"<div class='row sum'><span class='bd'></span><span class='nm'>Group total</span>"
               f"<span class='tr' style='background:none'></span><span class='tm'>{fmt(sum(p['mins'][today] for p in people))}</span></div>")
     day_sub = (dstr(today, "%A, %d %b") + " &middot; " if dates else "") + f"Day {today + 1} of {n_days} &middot; target {DAILY_TARGET_H:g}h"
-    left = (f"<div class='panel pl'><div class='ph'><div><h1>Today</h1><div class='sub'>{day_sub}</div></div></div>"
+    left = (f"<div class='panel pl'><div class='ph'><div><h1>{'Today' if stamp == 'Updated' else 'Yesterday'}</h1><div class='sub'>{day_sub}</div></div></div>"
             f"<div class='chips'>{chips([(p['name'], fmt(p['mins'][today])) for p in day[:3]])}</div>"
-            f"<div class='th'><span style='width:30px'></span><span style='width:130px'>Name</span>"
+            f"<div class='th'><span style='width:30px'></span><span style='width:150px'>Name</span>"
             f"<span style='flex:1'>Hours &middot; bar is full at {DAILY_TARGET_H:g}h</span></div>{lrows}</div>")
 
     # right: week
@@ -262,7 +262,7 @@ def build_html(people, dates, n_days, today, now, stamp="Updated"):
              f"<div class='sub'>Weekly target {WEEKLY_TARGET_H:g}h &middot; {stamp} {(dates[today] if dates else now).strftime('%d %b %Y') if stamp != 'Updated' else now.strftime('%d %b %Y')}</div></div>"
              f"<div class='pill'>{cycle}Day {elapsed} of {n_days}</div></div>"
              f"<div class='chips'>{chips([(p['name'], fmt(p['total'])) for p in wk[:3]])}</div>"
-             f"<div class='th'><span style='width:30px'></span><span style='width:112px'>Name</span>{hd}"
+             f"<div class='th'><span style='width:30px'></span><span style='width:140px'>Name</span>{hd}"
              f"<span class='tot'>Weekly total</span><span class='av'>Avg/day</span><span class='stw'>Status</span></div>{rrows}</div>")
 
     legend = (f"<div class='legend'><span>Day cells: green = {DAILY_TARGET_H:g}h+ &middot; amber = {DAILY_TARGET_H / 2:g}&ndash;{DAILY_TARGET_H:g}h &middot; red = under {DAILY_TARGET_H / 2:g}h</span>"
