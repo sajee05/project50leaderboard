@@ -398,10 +398,10 @@ def period_post(weeks, k, chat=None, specimen=False, tag=""):
     page, h = periods.board_html(title, span, rows, labels, specimen)
     png = f"period_{k}.png"
     shoot(page, 1700, 400, png)  # short viewport + full_page: image is exactly as tall as the content
-    send_photo(png, f"<b>{html.escape(title)}</b> &middot; {span}" + (" &middot; <i>specimen</i>" if specimen else "") + tag, chat)
+    send_photo(png, f"<b>{html.escape(title)}</b> · {span}" + (" · <i>specimen</i>" if specimen else "") + tag, chat)
     mp4 = f"period_{k}.mp4"
     secs = video_for([(r["name"], r["total"]) for r in rows], title, span, ("SPECIMEN · " if specimen else "") + "MONTHLY PODIUM", mp4)
-    send_video(mp4, f"<b>{html.escape(title)}</b> podium" + (" &middot; <i>specimen</i>" if specimen else ""), chat, secs)
+    send_video(mp4, f"<b>{html.escape(title)}</b> podium" + (" · <i>specimen</i>" if specimen else ""), chat, secs)
 
 
 def weekly_run(force=False, on_date=None):
@@ -418,7 +418,7 @@ def weekly_run(force=False, on_date=None):
     rng = f"{dates[0].strftime('%d %b')} – {dates[-1].strftime('%d %b %Y')}"
     secs = video_for([(r["name"], r["total"]) for r in rows], f"Week {n}", f"{rng} · weekly total", "WEEKLY PODIUM", "weekly.mp4")
     if not DRY:
-        send_video("weekly.mp4", f"<b>Week {n} podium</b> &middot; {rng}", None, secs)
+        send_video("weekly.mp4", f"<b>Week {n} podium</b> · {rng}", None, secs)
     return f"Weekly podium for {rng} posted. Week {n} is saved in data/weeks."
 
 
@@ -441,11 +441,11 @@ def specimen(chat):
     dm(chat, "Preparing specimens: weekly and monthly boards with videos. This takes a few minutes.")
     cap, err = render(None, "leaderboard.png")
     if cap:
-        send_photo("leaderboard.png", "<b>Weekly leaderboard</b> &middot; <i>specimen</i>\n\n" + cap, chat)
+        send_photo("leaderboard.png", "<b>Weekly leaderboard</b> · <i>specimen</i>\n\n" + cap, chat)
     rows = periods.aggregate([live])
     secs = video_for([(r["name"], r["total"]) for r in rows], "Weekly podium",
                      f"{dates[0].strftime('%d %b')} – {dates[-1].strftime('%d %b %Y')} · weekly total", "SPECIMEN · WEEKLY PODIUM", "weekly.mp4")
-    send_video("weekly.mp4", "<b>Weekly podium video</b> &middot; <i>specimen</i>", chat, secs)
+    send_video("weekly.mp4", "<b>Weekly podium video</b> · <i>specimen</i>", chat, secs)
     period_post(periods.specimen_weeks(archived, live, 4), 4, chat, specimen=True)
     dm(chat, "Done. Weeks with no saved history yet are padded with copies of the latest week for these specimens.")
 
