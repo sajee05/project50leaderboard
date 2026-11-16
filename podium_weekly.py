@@ -12,54 +12,49 @@ def timeline(n):
     r = max(0, n - 3)
     inter = min(0.4, 4.1 / r) if r else 0.0
     start = 6.6 - r * inter
-    return {"total": TOTAL, "p3": 6.9, "p2": 8.0, "p1": 9.75, "confetti": 10.65, "inter": inter,
+    return {"total": TOTAL, "p3": 6.9, "p2": 8.0, "p1": 9.75, "inter": inter,
             "rows": {str(rank): round(start + (n - rank) * inter, 3) for rank in range(4, n + 1)}}
 
 
-PAGE = r"""<!doctype html><html><head><meta charset='utf-8'><style>
-*{box-sizing:border-box;margin:0}
-html,body{width:1920px;height:1080px;overflow:hidden;background:#1a0b33;color:#fff;
+PAGE = r"""<!doctype html><html><head><meta charset='utf-8'><style>*{box-sizing:border-box;margin:0}
+html,body{width:1920px;height:1080px;overflow:hidden;background:#07080d;color:#f5f5f7;
 font-family:Inter,-apple-system,'SF Pro Display','Helvetica Neue','Liberation Sans',Arial,sans-serif}
 #bg{position:absolute;inset:0;background:
-radial-gradient(1100px 800px at 80% 90%,rgba(255,170,70,.55),transparent 65%),
-radial-gradient(900px 700px at 10% 10%,rgba(255,70,140,.45),transparent 65%),
-linear-gradient(150deg,#1c0b3a 0%,#4a1470 38%,#b3265f 72%,#ff7a45 100%)}
+radial-gradient(900px 700px at 28% 70%,rgba(70,90,255,.22),transparent 70%),
+radial-gradient(800px 600px at 85% 15%,rgba(255,170,60,.13),transparent 70%),
+linear-gradient(160deg,#0b0d18,#06070b)}
 canvas{position:absolute;inset:0}
 .abs{position:absolute}
 #head{left:0;top:0;transform-origin:0 0;width:900px}
-#kick{font-size:24px;letter-spacing:9px;font-weight:800;color:#ffd27a}
-#ttl{font-size:104px;font-weight:900;letter-spacing:-3px;line-height:1.05;margin-top:4px}
-#sub{display:inline-block;margin-top:10px;font-size:32px;font-weight:700;background:rgba(255,255,255,.16);
-border:1px solid rgba(255,255,255,.4);border-radius:14px;padding:8px 24px}
-#panel{background:rgba(255,255,255,.10);border:1px solid rgba(255,255,255,.22);border-radius:36px;padding:24px;
-backdrop-filter:blur(10px)}
-#grid{display:flex;gap:26px}
+#kick{font-size:22px;letter-spacing:7px;font-weight:700;color:#8b93ff}
+#ttl{font-size:84px;font-weight:800;letter-spacing:-2.5px;line-height:1.1;margin-top:4px}
+#sub{display:inline-block;margin-top:10px;font-size:32px;font-weight:700;color:#fff;background:rgba(139,147,255,.18);border:1px solid rgba(139,147,255,.35);border-radius:999px;padding:8px 26px}
+#panel{background:rgba(255,255,255,.055);border:1px solid rgba(255,255,255,.09);border-radius:34px;padding:24px 26px}
+#grid{display:flex;gap:30px}
 .col{flex:1;min-width:0}
-.rw{display:flex;align-items:center;gap:12px;padding:0 16px;border-radius:16px;margin-bottom:var(--gap);background:rgba(255,255,255,.10)}
-.rw.top{background:linear-gradient(90deg,rgba(255,210,122,.38),rgba(255,255,255,.12))}
-.rk{width:2.2em;font-weight:900;color:#ffd27a;font-variant-numeric:tabular-nums}
-.rn{width:30%;min-width:0;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.bar{flex:1;height:.42em;border-radius:99px;background:rgba(255,255,255,.14);overflow:hidden}
-.bar i{display:block;height:100%;border-radius:99px;background:linear-gradient(90deg,#ffd27a,#ff7a45)}
-.rv{font-weight:900;font-variant-numeric:tabular-nums;min-width:3.3em;text-align:right}
-.pil{border-radius:26px 26px 0 0;overflow:hidden;display:flex;justify-content:center;box-shadow:inset 0 0 0 2px rgba(255,255,255,.35)}
-.pil b{font-size:130px;font-weight:900;margin-top:10px;color:rgba(40,10,50,.7)}
-.g1{background:linear-gradient(160deg,#fff3b0,#ffc83d 45%,#d98a00)}
-.g2{background:linear-gradient(160deg,#ffffff,#d6dbe6 45%,#8b95a8)}
-.g3{background:linear-gradient(160deg,#ffd9b0,#e89a5a 45%,#a8581f)}
+.rw{display:flex;align-items:center;gap:12px;border-bottom:1px solid rgba(255,255,255,.07);margin-bottom:var(--gap)}
+.rw.top .rk{color:#ffd45e}
+.rk{width:2.2em;font-weight:800;color:#8b93ff;font-variant-numeric:tabular-nums}
+.rn{width:30%;min-width:0;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.bar{flex:1;height:6px;border-radius:3px;background:rgba(255,255,255,.1);overflow:hidden}
+.bar i{display:block;height:100%;border-radius:3px;background:linear-gradient(90deg,#6b78ff,#9be7ff)}
+.rv{font-weight:800;font-variant-numeric:tabular-nums;min-width:3.3em;text-align:right}
+.pil{border-radius:30px 30px 0 0;overflow:hidden;display:flex;justify-content:center;box-shadow:0 0 60px rgba(0,0,0,.4) inset}
+.pil b{font-size:130px;font-weight:800;margin-top:14px;opacity:.9;color:rgba(10,10,20,.78)}
+.g1{background:linear-gradient(180deg,#ffd45e,#c98a10)}
+.g2{background:linear-gradient(180deg,#e9edf3,#8e97a6)}
+.g3{background:linear-gradient(180deg,#f0b27a,#a8642d)}
 .card{text-align:center}
-.av{border-radius:50%;margin:0 auto 10px;display:flex;align-items:center;justify-content:center;font-weight:900;color:#2a0b33;
-border:4px solid rgba(255,255,255,.85)}
-.nm{font-weight:900;letter-spacing:-.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.vl{font-weight:900;font-variant-numeric:tabular-nums;letter-spacing:-1px}
-.hl{font-size:18px;letter-spacing:4px;color:rgba(255,255,255,.75);margin-top:2px}
-#flash{background:#fff;opacity:0;inset:0}
-#fade{background:#12061f;opacity:0;inset:0}
+.av{border-radius:50%;margin:0 auto 10px;display:flex;align-items:center;justify-content:center;font-weight:800;color:#0b0c14}
+.nm{font-weight:800;letter-spacing:-.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.vl{font-weight:800;font-variant-numeric:tabular-nums;letter-spacing:-1px}
+.hl{font-size:20px;color:#9a9aa8;letter-spacing:3px;margin-top:2px}
+#fade{background:#07080d;opacity:0;inset:0}
 </style></head><body>
 <div id='bg'></div><canvas id='cv' width='1920' height='1080'></canvas>
 <div id='head' class='abs'><div id='kick'></div><div id='ttl'></div><div id='sub'></div></div>
 <div id='panel' class='abs'></div><div id='stage'></div>
-<div id='flash' class='abs'></div><div id='fade' class='abs'></div>
+<div id='fade' class='abs'></div>
 <script>
 const D=__DATA__, TL=D.tl, R=D.ranked, n=R.length, ctx=document.getElementById('cv').getContext('2d');
 const $=id=>document.getElementById(id), clamp=(x,a=0,b=1)=>Math.min(b,Math.max(a,x));
@@ -71,7 +66,7 @@ const maxv=Math.max(1,...R.map(p=>p.mins));
 
 // ---- list (all members; revealed from the last place up to first) ----
 const cols=n>14?2:1, per=Math.ceil(n/cols), PW=cols==2?1000:960, PX=70, PY=330, PH=690;
-const inner=PH-48, gap=cols==2?6:8, rh=Math.min(70,Math.floor(inner/per)-gap), fs=Math.max(15,Math.min(30,Math.round(rh*.46)));
+const inner=PH-64, gap=cols==2?6:8, rh=Math.min(70,Math.floor(inner/per)-gap), fs=Math.max(15,Math.min(30,Math.round(rh*.46)));
 const panel=$('panel'); panel.style.cssText+=`left:${PX}px;top:${PY}px;width:${PW}px;height:${PH}px;--gap:${gap}px`;
 let h='<div id="grid">';
 for(let c=0;c<cols;c++){h+='<div class="col">';
@@ -82,7 +77,7 @@ panel.innerHTML=h+'</div>';
 R.forEach((p,i)=>{const e=$('r'+(i+1)); e.querySelector('.rn').textContent=p.name; e.dataset.v=p.mins});
 const rowT=rank=>rank>3?TL.rows[String(rank)]:(rank==3?TL.p3:rank==2?TL.p2:TL.p1)+0.35;
 
-// ---- podium (right) ----
+// ---- podium (right): three wooden crates under the bar lamps ----
 const cx=1480,pw=220,pg=18,base=1005, hts={1:380,2:290,3:215};
 const slot={2:cx-(pw+pg),1:cx,3:cx+(pw+pg)}, tm={3:TL.p3,2:TL.p2,1:TL.p1};
 const stage=$('stage'), els={};
@@ -96,44 +91,25 @@ for(const rank of [1,2,3]){const p=R[rank-1]; if(!p) continue; const x=slot[rank
 
 function render(t){
   ctx.clearRect(0,0,1920,1080);
-  // sweeping spotlight beams
-  ctx.globalCompositeOperation='lighter';
-  for(let i=0;i<5;i++){const a=Math.PI/2+Math.sin(t*.7+i*1.9)*.55+(i-2)*.28, len=1500, w=130+40*Math.sin(t+i);
-    const ox=1480+(i-2)*60, g=ctx.createLinearGradient(ox,-40,ox+Math.cos(a)*len,-40+Math.sin(a)*len);
-    g.addColorStop(0,'rgba(255,230,180,.20)'); g.addColorStop(1,'rgba(255,230,180,0)');
-    ctx.fillStyle=g; ctx.beginPath(); ctx.moveTo(ox-14,-40); ctx.lineTo(ox+14,-40);
-    ctx.lineTo(ox+Math.cos(a)*len+Math.cos(a+1.57)*w,-40+Math.sin(a)*len+Math.sin(a+1.57)*w);
-    ctx.lineTo(ox+Math.cos(a)*len-Math.cos(a+1.57)*w,-40+Math.sin(a)*len-Math.sin(a+1.57)*w); ctx.fill()}
-  // bokeh
-  for(let i=0;i<26;i++){const x=(rnd(i)*2100+t*(14+rnd(i+4)*22))%2100-90, y=(rnd(i+2)*1200-t*(10+rnd(i+6)*18)+3600)%1200-60, r=10+rnd(i+8)*36;
-    ctx.globalAlpha=.07+.12*rnd(i+3); ctx.fillStyle=['#ffd27a','#ff8fb3','#ffffff','#b79bff'][i%4]; ctx.beginPath(); ctx.arc(x,y,r,0,7); ctx.fill()}
-  ctx.globalAlpha=1; ctx.globalCompositeOperation='source-over';
+  for(let i=0;i<70;i++){const x=(rnd(i)*1920+t*(8+rnd(i+9)*14))%1920,y=(rnd(i+3)*1080-t*(6+rnd(i+5)*10)+3240)%1080;
+    ctx.globalAlpha=.10+.25*rnd(i+7);ctx.fillStyle='#cfd6ff';ctx.beginPath();ctx.arc(x,y,1+rnd(i+8)*2.2,0,7);ctx.fill()}
+  ctx.globalAlpha=1;
+  // title: fades in at the centre, then slides to the corner
+  const flick=1;
+  const k=eo((t-1.6)/.9), s=1.55-.55*k, px=420*(1-k)+80*k, py=330*(1-k)+60*k, op=eo((t-.15)/.5)*flick;
+  const hd=$('head'); hd.style.opacity=op; hd.style.transform=`translate(${px}px,${py}px) scale(${s})`;
+  const pa=eo((t-2.3)/.6); panel.style.opacity=pa; panel.style.transform=`translateX(${(1-pa)*-80}px)`;
 
-  // title: opens big in the centre, glides to the corner on the drop
-  const k=eo((t-1.6)/.9), s=1.55-.55*k, px=420*(1-k)+80*k, py=330*(1-k)+46*k, op=eo(t/.7);
-  const hd=$('head'); hd.style.opacity=op; hd.style.transform=`translate(${px}px,${py+(1-op)*30}px) scale(${s})`;
-  // list panel
-  const pa=eo((t-2.3)/.6); panel.style.opacity=pa; panel.style.transform=`translateY(${(1-pa)*40}px)`;
-
-  // rows
   for(let rank=n;rank>=1;rank--){const e=$('r'+rank), rt=rowT(rank), q=eo((t-rt)/.45);
-    e.style.opacity=q; e.style.transform=`translateX(${(1-q)*-70}px) scale(${rank<=3?1+.05*Math.sin(clamp((t-rt)/.5)*3.14):1})`;
+    e.style.opacity=q; e.style.transform=`translateX(${(1-q)*-70}px)`;
     e.querySelector('.bar i').style.width=(q*(+e.dataset.v/maxv)*100)+'%';
     e.querySelector('.rv').textContent=q>0?fmt(+e.dataset.v*eo((t-rt)/.7)):''}
 
-  // podium
   for(const rank of [1,2,3]){const e=els[rank]; if(!e) continue; const s0=tm[rank], p=clamp((t-s0)/.9), hh=hts[rank]*eo(p);
     e.pil.style.height=hh+'px'; e.pil.style.top=(base-hh)+'px'; e.pil.style.opacity=p>0?1:0;
     const cp=eb((t-s0-.45)/.6), cardH=rank==1?262:232;
     e.card.style.opacity=clamp((t-s0-.4)/.3); e.card.style.top=(base-hh-cardH-(1-clamp(cp))*36)+'px';
     e.vl.textContent=fmt(e.v*eo((t-s0-.5)/1.1))}
-  // winner flash + confetti
-  $('flash').style.opacity=clamp(1-(t-TL.p1-.75)/.3)*(t>TL.p1+.75?.5:0);
-  const ct=t-TL.confetti;
-  if(ct>0&&ct<2.6){for(let i=0;i<190;i++){const side=i%2?1:-1, a=(-90+side*(18+rnd(i)*40))*Math.PI/180, sp=600+rnd(i+1)*900, dl=rnd(i+2)*.2, tt=ct-dl; if(tt<0) continue;
-      const kk=Math.exp(-tt*1.15), x=cx+side*130+Math.cos(a)*sp*(1-kk)/1.15+Math.sin(tt*4+i)*12, y=base-hts[1]+Math.sin(a)*sp*(1-kk)/1.15+650*tt*tt;
-      ctx.save(); ctx.translate(x,y); ctx.rotate(tt*(3+rnd(i+4)*7)+i); ctx.globalAlpha=clamp(1-(ct-1.7)/.9);
-      ctx.fillStyle=['#ffd27a','#ffffff','#ff5e8a','#7ef0c8','#9bb3ff'][i%5]; if(i%3==0){ctx.beginPath();ctx.arc(0,0,5,0,7);ctx.fill()} else ctx.fillRect(-6,-3,12,6); ctx.restore()}ctx.globalAlpha=1}
   $('fade').style.opacity=clamp((t-(TL.total-.6))/.6);
 }
 window.render=render;
@@ -172,13 +148,9 @@ def make_sfx(path, tl, n, rate=44100):
         add(tl[key] - 0.45, 0.45, swell(0.45), 0.18)
         add(tl[key], 1.0, boom, g)
         add(tl[key], 1.3, ding(f), 0.30)
-    add(tl["p1"] - 0.6, 0.6, swell(0.6), 0.24)          # winner build-up
-    add(tl["p1"], 1.4, boom, 0.95)
-    for k, f in enumerate((523.25, 659.25, 783.99, 1046.5)):
-        add(tl["p1"] + 0.05 + k * 0.09, 1.6, ding(f), 0.26)
-    add(tl["confetti"], 0.35, pop, 0.45)                # confetti pop + sparkle
-    for k in range(16):
-        add(tl["confetti"] + 0.05 + k * 0.08, 0.5, star(1500 + 110 * (k % 6)), 0.07)
+    add(tl["p1"] - 0.45, 0.45, swell(0.45), 0.18)       # 1st place: same gentle treatment as 2nd and 3rd
+    add(tl["p1"], 1.0, boom, 0.7)
+    add(tl["p1"], 1.3, ding(880.0), 0.30)
     peak = max(abs(x) for x in L) or 1
     out = array.array("h", (int(max(-1, min(1, x / peak * 0.9)) * 32767) for x in L))
     with wave.open(path, "wb") as w:
