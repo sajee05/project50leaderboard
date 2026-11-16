@@ -29,7 +29,7 @@ const COMMANDS = ["/daily", "/today", "/leaderboard", "/rerun", "/yesterday", "/
 // Scheduled commands (Worker > Settings > Triggers > Cron Triggers; times are UTC, shown here in IST).
 // The cron text must match one of these exactly.
 const SCHEDULE = {
-  "28 17 * * *": "/daily",    // every night 22:58 IST
+  "57 17 * * *": "/daily",    // every night 23:27 IST
 };
 
 export default {
