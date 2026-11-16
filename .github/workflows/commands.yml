@@ -1,14 +1,24 @@
-name: Admin commands
-# Polls Telegram for /today (/leaderboard, /rerun) and /yesterday sent by an admin
-# (ADMIN_IDS, default 7574436736) and posts the board to the group. Anyone else is ignored.
+name: Bot commands
+# The bot reads messages sent to it by an admin (ADMIN_IDS, default 7574436736); everyone else is ignored.
+# Schedule these in Telegram itself (long-press send > Schedule message > Repeat), no cron site needed.
+#   /daily      post today's leaderboard to the group        (/today, /leaderboard, /rerun are the same)
+#   /yesterday  post yesterday's leaderboard to the group
+#   /weekly     archive the finished cycle + post the weekly podium video   (/weekly force = even mid-cycle)
+#   /monthly    post the monthly leaderboard + video from the last 4 archived weeks
+#   /show       specimens of the weekly and monthly boards + videos, sent to the admin's DM
+#   "Rerun" button under a failure alert re-posts that exact day
+# GitHub checks for new messages every 5 minutes (free on a public repo; scheduled runs can lag a little).
 # NOTE: getUpdates only works while the bot has no webhook set.
 on:
   schedule:
     - cron: "*/5 * * * *"
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 concurrency:
-  group: admin-commands
+  group: archive-data
   cancel-in-progress: false
 
 jobs:
@@ -18,7 +28,6 @@ jobs:
       BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
       SHEET_CSV_URL: ${{ secrets.SHEET_CSV_URL }}
       GOOGLE_SA_JSON: ${{ secrets.GOOGLE_SA_JSON }}
-      ALERT_CHAT_ID: ${{ secrets.ALERT_CHAT_ID }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -27,9 +36,30 @@ jobs:
       - run: pip install requests
       - id: poll
         run: python main.py --poll
-      - if: steps.poll.outputs.actions != ''
-        run: pip install playwright google-auth && playwright install --with-deps chromium
-      - if: contains(steps.poll.outputs.actions, 'yesterday')
-        run: python main.py --yesterday
-      - if: contains(steps.poll.outputs.actions, 'today')
-        run: python main.py
+      - if: steps.poll.outputs.has == 'true'
+        run: |
+          pip install playwright google-auth && playwright install --with-deps chromium
+          sudo apt-get install -y -qq ffmpeg
+      - if: steps.poll.outputs.has == 'true'
+        run: python main.py --process
+      - if: steps.poll.outputs.has == 'true'
+        name: Keep newly archived weekly data forever
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data
+          if ! git diff --cached --quiet; then
+            git commit -m "Archive weekly data"
+            for i in 1 2 3; do git pull --rebase -q && git push && break || sleep 5; done
+          fi
+      - name: Alert admin if the run itself crashed
+        if: failure()
+        env:
+          ALERT_CHAT_ID: ${{ secrets.ALERT_CHAT_ID }}
+        run: |
+          H=$(TZ=Asia/Kolkata date +%H)
+          if [ "$H" -lt 6 ]; then D=$(TZ=Asia/Kolkata date -d yesterday +%F); else D=$(TZ=Asia/Kolkata date +%F); fi
+          curl -s "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
+            -d chat_id="${ALERT_CHAT_ID:-7574436736}" \
+            --data-urlencode "text=A bot run crashed: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" \
+            --data-urlencode "reply_markup={\"inline_keyboard\":[[{\"text\":\"🔁 Rerun today's board\",\"callback_data\":\"rr:day:${D}\"}]]}"

@@ -15,6 +15,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Remember which day this run is for (used by the failure alert's Rerun button)
+        run: |
+          H=$(TZ=Asia/Kolkata date +%H)
+          if [ "$H" -lt 6 ]; then D=$(TZ=Asia/Kolkata date -d yesterday +%F); else D=$(TZ=Asia/Kolkata date +%F); fi
+          if [ "${{ inputs.which }}" = "yesterday" ] || [ "${{ github.event.action }}" = "trigger_yesterday" ]; then D=$(date -d "$D -1 day" +%F); fi
+          echo "BOARD_DATE=$D" >> $GITHUB_ENV
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
@@ -24,15 +30,14 @@ jobs:
           BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
           SHEET_CSV_URL: ${{ secrets.SHEET_CSV_URL }}
           GOOGLE_SA_JSON: ${{ secrets.GOOGLE_SA_JSON }}
-      # Optional: private Telegram alert if a run fails (needs ALERT_CHAT_ID secret)
-      - name: Alert on failure
+      # Failure -> DM the admin with a Rerun button (handled by the "Admin commands" workflow)
+      - name: Alert admin on failure
         if: failure()
         env:
           BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
           ALERT_CHAT_ID: ${{ secrets.ALERT_CHAT_ID }}
         run: |
-          if [ -n "$ALERT_CHAT_ID" ]; then
-            curl -s "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
-              -d chat_id="${ALERT_CHAT_ID}" \
-              --data-urlencode "text=Leaderboard run failed: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
-          fi
+          curl -s "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
+            -d chat_id="${ALERT_CHAT_ID:-7574436736}" \
+            --data-urlencode "text=Leaderboard run failed for ${BOARD_DATE}: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" \
+            --data-urlencode "reply_markup={\"inline_keyboard\":[[{\"text\":\"🔁 Rerun\",\"callback_data\":\"rr:day:${BOARD_DATE}\"}]]}"

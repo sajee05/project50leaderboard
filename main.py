@@ -15,6 +15,8 @@ ATRISK_AVG_H = float(os.environ.get("ATRISK_AVG_H", "7"))     # avg/day >= this 
 DAY_OVERRIDE = os.environ.get("DAY")                       # optional: force day number (1-7)
 ADMIN_IDS = {int(x) for x in re.split(r"[,\s]+", os.environ.get("ADMIN_IDS", "7574436736")) if x.strip()}  # Telegram user IDs allowed to run commands
 DRY = "--dry" in sys.argv
+ROLLOVER_HOUR = int(os.environ.get("ROLLOVER_HOUR", "6"))  # before this IST hour, "today" still means the previous study day
+ALERT_CHAT_ID = os.environ.get("ALERT_CHAT_ID", "") or "7574436736"  # admin DM that gets failure alerts
 BASE_H = 1080          # 16:9 canvas height; it only grows when there are too many rows to fit
 MIN_ROW, MAX_ROW = 32, 84   # row height limits in px (zoom out / zoom in)
 OVERHEAD = 317         # px of the canvas used by everything except the rows (calibrated)
@@ -197,6 +199,8 @@ def snapshot(people, today):
 def build_html(people, dates, n_days, today, now, stamp="Updated"):
     e = html.escape
     rh, f, height = layout(len(people))
+    ttl = ("Today" if stamp == "Updated" else "Yesterday" if dates and dates[today] == now.date() - dt.timedelta(days=1)
+           else dates[today].strftime("%d %b") if dates else "Snapshot")
     dtm = int(DAILY_TARGET_H * 60)
     wt = int(WEEKLY_TARGET_H * 60)
     elapsed = today + 1
@@ -228,7 +232,8 @@ def build_html(people, dates, n_days, today, now, stamp="Updated"):
     lrows += (f"<div class='row sum'><span class='bd'></span><span class='nm'>Group total</span>"
               f"<span class='tr' style='background:none'></span><span class='tm'>{fmt(sum(p['mins'][today] for p in people))}</span></div>")
     day_sub = (dstr(today, "%A, %d %b") + " &middot; " if dates else "") + f"Day {today + 1} of {n_days} &middot; target {DAILY_TARGET_H:g}h"
-    left = (f"<div class='panel pl'><div class='ph'><div><h1>{'Today' if stamp == 'Updated' else 'Yesterday'}</h1><div class='sub'>{day_sub}</div></div></div>"
+    left = (f"<div class='panel pl'><div class='ph'><div><h1>{ttl}</h1><div class='sub'>{day_sub}</div></div>"
+            f"<div class='pill'>{dstr(today, '%a, %d %b %Y')}</div></div>"
             f"<div class='chips'>{chips([(p['name'], fmt(p['mins'][today])) for p in day[:3]])}</div>"
             f"<div class='th'><span style='width:30px'></span><span style='width:150px'>Name</span>"
             f"<span style='flex:1'>Hours &middot; bar is full at {DAILY_TARGET_H:g}h</span></div>{lrows}</div>")
@@ -291,80 +296,261 @@ def caption(people, today, now, day_date=None):
             f"<b>Highest chance of making it to the list in the group</b> = <b>{e(', '.join(best))}</b>")
 
 
-# ---------- render + send ----------
-def render(offset=0, png="leaderboard.png"):
-    """offset=0 -> today's board, offset=1 -> yesterday's. Returns (caption, error)."""
-    from playwright.sync_api import sync_playwright
-    now = dt.datetime.now(ZoneInfo("Asia/Kolkata"))
-    people, dates, n_days = parse(fetch_rows())
-    today = pick_day(people, n_days, dates, now) - offset
-    if today < 0:
-        return None, "There is no earlier day in this cycle yet."
-    snapshot(people, today)  # board exactly as it stood at the end of that day
-    page_html, height = build_html(people, dates, n_days, today, now, "Updated" if offset == 0 else "Snapshot")
-    with sync_playwright() as pw:
-        b = pw.chromium.launch(executable_path=os.environ.get("CHROME_PATH") or None)
-        pg = b.new_page(viewport={"width": 1920, "height": height}, device_scale_factor=1.25)
-        pg.set_content(page_html)
-        pg.screenshot(path=png)
-        b.close()
-    cap = caption(people, today, now, dates[today] if dates else None)
-    print(f"{len(people)} members, canvas 1920x{height}")
-    print(cap)
-    return cap, None
+# ---------- helpers ----------
+def now_ist():
+    return dt.datetime.now(ZoneInfo("Asia/Kolkata"))
+
+
+def board_date(now=None):
+    """Date the automatic board is for. A run (or rerun) that lands after midnight, before ROLLOVER_HOUR,
+    still belongs to the previous day, e.g. the 11:45 PM run that was delayed or re-run at 12:30 AM."""
+    now = now or now_ist()
+    return now.date() - dt.timedelta(days=1) if now.hour < ROLLOVER_HOUR else now.date()
 
 
 def tg(method, **kw):
-    r = requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/{method}", timeout=60, **kw)
-    print(method, r.status_code, r.text[:300])
+    r = requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/{method}", timeout=120, **kw)
+    print(method, r.status_code, r.text[:200])
     r.raise_for_status()
     return r.json()
 
 
-def send_board(cap, png="leaderboard.png"):
+def target(chat=None):
+    """Group topic by default; a DM chat id when given."""
+    return {"chat_id": chat} if chat else {"chat_id": CHAT_ID, "message_thread_id": THREAD_ID}
+
+
+def send_photo(png, cap, chat=None):
     with open(png, "rb") as f:
-        tg("sendPhoto", data={"chat_id": CHAT_ID, "message_thread_id": THREAD_ID, "caption": cap, "parse_mode": "HTML"},
-           files={"photo": f})
+        tg("sendPhoto", data={**target(chat), "caption": cap, "parse_mode": "HTML"}, files={"photo": f})
+
+
+def send_video(mp4, cap, chat=None, seconds=15):
+    with open(mp4, "rb") as f:
+        tg("sendVideo", data={**target(chat), "caption": cap, "parse_mode": "HTML", "supports_streaming": "true",
+                              "width": 1920, "height": 1080, "duration": int(seconds)}, files={"video": f})
+
+
+def dm(chat, text, markup=None):
+    import json
+    d = {"chat_id": chat, "text": text, "parse_mode": "HTML"}
+    if markup:
+        d["reply_markup"] = json.dumps(markup)
+    tg("sendMessage", data=d)
+
+
+def shoot(page_html, width, height, png):
+    from playwright.sync_api import sync_playwright
+    with sync_playwright() as pw:
+        b = pw.chromium.launch(executable_path=os.environ.get("CHROME_PATH") or None)
+        pg = b.new_page(viewport={"width": width, "height": height}, device_scale_factor=1.25)
+        pg.set_content(page_html)
+        pg.screenshot(path=png, full_page=True)
+        b.close()
+
+
+def cycle_info(on_date=None):
+    """Sheet data + the real calendar dates of the cycle. If the sheet has no 'Cycle start' cell,
+    cycles are assumed to run Monday to Sunday and the dates are derived from the board date."""
+    people, dates, n_days = parse(fetch_rows())
+    d = on_date or board_date()
+    if not dates:
+        start = d - dt.timedelta(days=d.weekday())
+        dates = [start + dt.timedelta(days=i) for i in range(n_days)]
+    return people, dates, n_days, d
+
+
+# ---------- daily board ----------
+def render(on_date=None, png="leaderboard.png"):
+    """Board for a calendar date (default: board_date()). Returns (caption, error)."""
+    now = now_ist()
+    people, dates, n_days, d = cycle_info(on_date)
+    today = int(DAY_OVERRIDE) - 1 if DAY_OVERRIDE else (d - dates[0]).days
+    if today < 0 or today >= n_days:
+        return None, f"{d.isoformat()} is outside the current cycle ({dates[0]} to {dates[-1]})."
+    snapshot(people, today)  # board exactly as it stood at the end of that day
+    stamp = "Updated" if (dates and dates[today] == now.date()) else "Snapshot"
+    page_html, height = build_html(people, dates, n_days, today, now, stamp)
+    shoot(page_html, 1920, height, png)
+    cap = caption(people, today, now, dates[today] if dates else None)
+    print(f"{len(people)} members, canvas 1920x{height}")
+    return cap, None
+
+
+# ---------- weekly archive, videos, monthly ----------
+def week_state(on_date=None):
+    people, dates, n_days, d = cycle_info(on_date)
+    last = max(0, min(n_days - 1, (d - dates[0]).days))
+    return people, dates, n_days, last
+
+
+def video_for(ranked, title, subtitle, kicker, out, label="THE REST OF THE BOARD"):
+    import podium
+    return podium.make_video(out, title, subtitle, kicker, ranked, label)
+
+
+def period_post(weeks, k, chat=None, specimen=False, tag=""):
+    """Board image + podium video for the last k weeks."""
+    import periods
+    rows = periods.aggregate(weeks)
+    title, span, labels = periods.period_names(k, weeks)
+    page, h = periods.board_html(title, span, rows, labels, specimen)
+    png = f"period_{k}.png"
+    shoot(page, 1700, 400, png)  # short viewport + full_page: image is exactly as tall as the content
+    send_photo(png, f"<b>{html.escape(title)}</b> &middot; {span}" + (" &middot; <i>specimen</i>" if specimen else "") + tag, chat)
+    mp4 = f"period_{k}.mp4"
+    secs = video_for([(r["name"], r["total"]) for r in rows], title, span, ("SPECIMEN · " if specimen else "") + "MONTHLY PODIUM", mp4)
+    send_video(mp4, f"<b>{html.escape(title)}</b> podium" + (" &middot; <i>specimen</i>" if specimen else ""), chat, secs)
+
+
+def weekly_run(force=False, on_date=None):
+    """Archive the finished cycle + post its podium video. Returns a status line for the admin."""
+    import periods
+    people, dates, n_days, last = week_state(on_date)
+    if last != n_days - 1 and not force:
+        return f"This cycle is only on day {last + 1} of {n_days}, so it is not finished. Send <code>/weekly force</code> to run it anyway."
+    wk = periods.week_dict(people, dates, n_days, last)
+    path = periods.save_week(wk)
+    n = len(periods.load_weeks())
+    print("archived", path, f"({n} weeks stored)")
+    rows = periods.aggregate([wk])
+    rng = f"{dates[0].strftime('%d %b')} – {dates[-1].strftime('%d %b %Y')}"
+    secs = video_for([(r["name"], r["total"]) for r in rows], f"Week {n}", f"{rng} · weekly total", "WEEKLY PODIUM", "weekly.mp4")
+    if not DRY:
+        send_video("weekly.mp4", f"<b>Week {n} podium</b> &middot; {rng}", None, secs)
+    return f"Weekly podium for {rng} posted. Week {n} is saved in data/weeks."
+
+
+def monthly_run(on_date=None):
+    """Monthly board + podium video from the last 4 archived weeks (fewer if that is all there is)."""
+    import periods
+    weeks = periods.load_weeks()[-4:]
+    if not weeks:
+        return "No weeks are archived yet. Run /weekly at the end of a cycle first."
+    period_post(weeks, len(weeks))
+    return f"Monthly leaderboard posted ({len(weeks)} week{'s' if len(weeks) > 1 else ''}: {weeks[0]['cycle_start']} onwards)."
+
+
+def specimen(chat):
+    """/show: preview of the weekly and monthly boards and videos, sent to the admin's chat."""
+    import periods
+    people, dates, n_days, last = week_state()
+    live = periods.week_dict(people, dates, n_days, last)
+    archived = [w for w in periods.load_weeks() if w["cycle_start"] != live["cycle_start"]]
+    dm(chat, "Preparing specimens: weekly and monthly boards with videos. This takes a few minutes.")
+    cap, err = render(None, "leaderboard.png")
+    if cap:
+        send_photo("leaderboard.png", "<b>Weekly leaderboard</b> &middot; <i>specimen</i>\n\n" + cap, chat)
+    rows = periods.aggregate([live])
+    secs = video_for([(r["name"], r["total"]) for r in rows], "Weekly podium",
+                     f"{dates[0].strftime('%d %b')} – {dates[-1].strftime('%d %b %Y')} · weekly total", "SPECIMEN · WEEKLY PODIUM", "weekly.mp4")
+    send_video("weekly.mp4", "<b>Weekly podium video</b> &middot; <i>specimen</i>", chat, secs)
+    period_post(periods.specimen_weeks(archived, live, 4), 4, chat, specimen=True)
+    dm(chat, "Done. Weeks with no saved history yet are padded with copies of the latest week for these specimens.")
 
 
 # ---------- admin commands (polled from Telegram) ----------
-COMMANDS = {"/today": "today", "/leaderboard": "today", "/rerun": "today", "/yesterday": "yesterday"}
+GROUP_CMDS = {"/daily": "today", "/today": "today", "/leaderboard": "today", "/rerun": "today", "/yesterday": "yesterday",
+              "/weekly": "weekly", "/monthly": "monthly", "/show": "show"}
 
 
 def poll():
-    """Read pending Telegram updates, keep commands sent by an admin, acknowledge everything.
-    Prints the distinct actions (e.g. 'today yesterday') and exposes them as the `actions` step output."""
+    """Collect admin commands and Rerun-button presses, acknowledge them, write actions.json."""
     import json
-    upd = tg("getUpdates", data={"timeout": 0, "allowed_updates": json.dumps(["message"])})["result"]
+    upd = tg("getUpdates", data={"timeout": 0, "allowed_updates": json.dumps(["message", "callback_query"])})["result"]
     actions = []
+
+    def add(a):
+        if a not in actions:
+            actions.append(a)
+
     for u in upd:
+        cq = u.get("callback_query")
+        if cq:
+            if (cq.get("from") or {}).get("id") in ADMIN_IDS and (cq.get("data") or "").startswith("rr:"):
+                _, mode, d = cq["data"].split(":", 2)
+                add({"do": "rerun", "mode": mode, "date": d, "chat": cq["message"]["chat"]["id"]})
+                tg("answerCallbackQuery", data={"callback_query_id": cq["id"], "text": "Re-running, result in a few minutes"})
+            continue
         m = u.get("message") or {}
-        uid = (m.get("from") or {}).get("id")
+        if (m.get("from") or {}).get("id") not in ADMIN_IDS:
+            continue
         words = (m.get("text") or "").split()
         cmd = words[0].split("@")[0].lower() if words else ""
-        if uid in ADMIN_IDS and cmd in COMMANDS and COMMANDS[cmd] not in actions:
-            actions.append(COMMANDS[cmd])
+        chat = m["chat"]["id"]
+        if cmd in GROUP_CMDS:
+            add({"do": GROUP_CMDS[cmd], "chat": chat, "force": "force" in [w.lower() for w in words[1:]]})
     if upd:
         tg("getUpdates", data={"offset": upd[-1]["update_id"] + 1, "timeout": 0})
-    out = " ".join(actions)
-    print("actions:", out or "(none)")
+    with open("actions.json", "w") as f:
+        json.dump(actions, f)
+    print("actions:", actions or "(none)")
     if os.environ.get("GITHUB_OUTPUT"):
         with open(os.environ["GITHUB_OUTPUT"], "a") as f:
-            f.write(f"actions={out}\n")
+            f.write(f"has={'true' if actions else 'false'}\n")
+
+
+def run_board(on_date, chat_for_reply=None, label=""):
+    cap, err = render(on_date)
+    if err:
+        if chat_for_reply:
+            dm(chat_for_reply, err)
+        print(err)
+        return
+    send_photo("leaderboard.png", cap)
+    if chat_for_reply:
+        dm(chat_for_reply, f"Posted {label or 'the leaderboard'} to the group.")
+
+
+def process():
+    import json
+    for a in json.load(open("actions.json")):
+        chat = a.get("chat") or ALERT_CHAT_ID
+        try:
+            if a["do"] == "today":
+                run_board(None, chat, "today's leaderboard")
+            elif a["do"] == "yesterday":
+                run_board(board_date() - dt.timedelta(days=1), chat, "yesterday's leaderboard")
+            elif a["do"] == "weekly":
+                dm(chat, weekly_run(force=a.get("force")))
+            elif a["do"] == "monthly":
+                dm(chat, monthly_run())
+            elif a["do"] == "show":
+                specimen(chat)
+            elif a["do"] == "rerun":
+                d = dt.date.fromisoformat(a["date"])
+                if a["mode"] == "weekly":
+                    dm(chat, weekly_run(force=True, on_date=d))
+                elif a["mode"] == "monthly":
+                    dm(chat, monthly_run())
+                else:
+                    run_board(d, chat, f"the {d.strftime('%d %b')} leaderboard")
+        except Exception as ex:  # tell the admin, with a Rerun button that remembers the exact day
+            print("action failed:", a, ex)
+            bd = board_date()
+            cb = {"today": f"rr:day:{bd}", "yesterday": f"rr:day:{bd - dt.timedelta(days=1)}",
+                  "weekly": f"rr:weekly:{bd}", "monthly": f"rr:monthly:{bd}"}.get(a["do"])
+            dm(chat, f"<code>/{html.escape(a['do'])}</code> failed: {html.escape(str(ex))[:300]}",
+               [[{"text": "🔁 Rerun", "callback_data": cb}]] if cb else None)
 
 
 def main():
     if "--poll" in sys.argv:
         return poll()
-    offset = 1 if "--yesterday" in sys.argv else 0
-    cap, err = render(offset)
+    if "--process" in sys.argv:
+        return process()
+    if "--weekly" in sys.argv:
+        return print(weekly_run(force="--force" in sys.argv))
+    if "--monthly" in sys.argv:
+        return print(monthly_run())
+    on_date = board_date() - dt.timedelta(days=1) if "--yesterday" in sys.argv else None
+    cap, err = render(on_date)
     if err:
         print(err)
-        if not DRY and os.environ.get("ALERT_CHAT_ID"):
-            tg("sendMessage", data={"chat_id": os.environ["ALERT_CHAT_ID"], "text": err})
         return
+    print(cap)
     if not DRY:
-        send_board(cap)
+        send_photo("leaderboard.png", cap)
 
 
 if __name__ == "__main__":
