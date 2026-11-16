@@ -1,0 +1,35 @@
+name: Admin commands
+# Polls Telegram for /today (/leaderboard, /rerun) and /yesterday sent by an admin
+# (ADMIN_IDS, default 7574436736) and posts the board to the group. Anyone else is ignored.
+# NOTE: getUpdates only works while the bot has no webhook set.
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: admin-commands
+  cancel-in-progress: false
+
+jobs:
+  commands:
+    runs-on: ubuntu-latest
+    env:
+      BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
+      SHEET_CSV_URL: ${{ secrets.SHEET_CSV_URL }}
+      GOOGLE_SA_JSON: ${{ secrets.GOOGLE_SA_JSON }}
+      ALERT_CHAT_ID: ${{ secrets.ALERT_CHAT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install requests
+      - id: poll
+        run: python main.py --poll
+      - if: steps.poll.outputs.actions != ''
+        run: pip install playwright google-auth && playwright install --with-deps chromium
+      - if: contains(steps.poll.outputs.actions, 'yesterday')
+        run: python main.py --yesterday
+      - if: contains(steps.poll.outputs.actions, 'today')
+        run: python main.py

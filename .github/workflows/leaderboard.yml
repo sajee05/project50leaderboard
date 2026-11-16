@@ -1,8 +1,14 @@
 name: Daily leaderboard
 on:
   repository_dispatch:
-    types: [trigger_leaderboard]   # fired by cron-job.org
+    types: [trigger_leaderboard, trigger_yesterday]   # fired by cron-job.org
   workflow_dispatch:                # "Run workflow" button for manual tests
+    inputs:
+      which:
+        description: "Which board to post"
+        type: choice
+        options: [today, yesterday]
+        default: today
 
 jobs:
   post:
@@ -13,7 +19,7 @@ jobs:
         with:
           python-version: "3.12"
       - run: pip install requests playwright google-auth && playwright install --with-deps chromium
-      - run: python main.py
+      - run: python main.py ${{ (inputs.which == 'yesterday' || github.event.action == 'trigger_yesterday') && '--yesterday' || '' }}
         env:
           BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
           SHEET_CSV_URL: ${{ secrets.SHEET_CSV_URL }}

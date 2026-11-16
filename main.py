@@ -13,7 +13,11 @@ WEEKLY_TARGET_H = float(os.environ.get("WEEKLY_TARGET_H", "50"))
 ONTRACK_AVG_H = float(os.environ.get("ONTRACK_AVG_H", "8"))   # avg/day >= this -> ON TRACK
 ATRISK_AVG_H = float(os.environ.get("ATRISK_AVG_H", "7"))     # avg/day >= this -> AT RISK, else UNLIKELY
 DAY_OVERRIDE = os.environ.get("DAY")                       # optional: force day number (1-7)
+ADMIN_IDS = {int(x) for x in re.split(r"[,\s]+", os.environ.get("ADMIN_IDS", "7574436736")) if x.strip()}  # Telegram user IDs allowed to run commands
 DRY = "--dry" in sys.argv
+BASE_H = 1080          # 16:9 canvas height; it only grows when there are too many rows to fit
+MIN_ROW, MAX_ROW = 32, 60   # row height limits in px (zoom out / zoom in)
+OVERHEAD = 317         # px of the canvas used by everything except the rows (calibrated)
 
 
 # ---------- parsing ----------
@@ -134,7 +138,7 @@ CSS = """*{box-sizing:border-box}
 :root{--bg:#f5f5f7;--card:#fff;--tx:#1d1d1f;--mu:#86868b;--chip:#f2f2f5;--ln:#efeff2;--tk:#ececf0;
 --tdy:rgba(10,132,255,.07);--gb:rgba(52,199,89,.16);--gt:#17803a;--ab:rgba(255,159,10,.18);--at:#b25e00;
 --rb:rgba(255,59,48,.13);--rt:#c4271c;--bb:rgba(10,132,255,.13);--bt:#0a63c9}
-body{margin:0;width:1920px;height:1080px;padding:34px;background:var(--bg);color:var(--tx);
+body{margin:0;width:1920px;height:var(--H,1080px);padding:34px;background:var(--bg);color:var(--tx);
 font-family:-apple-system,'SF Pro Display',Inter,'Helvetica Neue','Liberation Sans',Arial,sans-serif;
 display:flex;flex-direction:column;gap:14px}
 .wrap{flex:1;display:flex;gap:22px;min-height:0}
@@ -144,36 +148,55 @@ display:flex;flex-direction:column;gap:14px}
 .sub{font-size:17px;color:var(--mu);margin-top:3px}
 .pill{background:var(--tx);color:var(--bg);border-radius:999px;padding:8px 16px;font-size:15px;font-weight:600;margin-top:6px}
 .chips{display:flex;gap:10px;margin:14px 0 10px}
-.chip{flex:1;background:var(--chip);border-radius:16px;padding:10px 14px;display:flex;align-items:center;font-size:19px}
-.chip:first-child{background:var(--tx);color:var(--bg)}.cn{flex:1;font-weight:700;margin-left:10px}.ct{font-weight:800;font-variant-numeric:tabular-nums}
-.bd{width:26px;height:26px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;background:var(--chip);color:var(--tx);flex:none;margin-right:4px}
+.chip{flex:1;min-width:0;background:var(--chip);border-radius:16px;padding:10px 14px;display:flex;align-items:center;font-size:19px}
+.chip:first-child{background:var(--tx);color:var(--bg)}.cn{flex:1;min-width:0;font-weight:700;margin-left:10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.ct{margin-left:8px;flex:none;font-weight:800;font-variant-numeric:tabular-nums}
+.bd{width:calc(26px*var(--f,1));height:calc(26px*var(--f,1));border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:calc(13px*var(--f,1));font-weight:700;background:var(--chip);color:var(--tx);flex:none;margin-right:4px}
 .chip:first-child .bd{background:var(--bg);color:var(--tx)}
 .b1{background:#fbbf24!important;color:#1d1d1f!important}.b2{background:#d1d5db!important;color:#1d1d1f!important}.b3{background:#e0a46b!important;color:#1d1d1f!important}
 .th,.row{display:flex;align-items:center}
 .th{font-size:13px;color:var(--mu);font-weight:600;height:40px;border-bottom:1px solid var(--ln)}
 .th small,.dc small{display:block;font-weight:400;font-size:11px;opacity:.7}
-.row{flex:1;border-bottom:1px solid var(--ln);font-size:18px;max-height:42px}.row.sum{font-weight:800;border-bottom:none}
-.nm{width:130px;font-weight:600}.pr .nm{width:112px}
+.row{flex:none;height:var(--rh,42px);border-bottom:1px solid var(--ln);font-size:calc(18px*var(--f,1))}.row.sum{font-weight:800;border-bottom:none}
+.nm{width:130px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding-right:6px}.pr .nm{width:112px}
 .dc{width:70px;text-align:center;flex:none;padding:2px 0}.dc.tdy{background:var(--tdy);border-radius:10px}.th .dc.tdy{color:#0a84ff;font-weight:700}
-.c{display:inline-block;min-width:56px;padding:3px 0;border-radius:8px;font-weight:600;font-size:16px;font-variant-numeric:tabular-nums}
+.c{display:inline-block;min-width:56px;padding:calc(3px*var(--f,1)) 0;border-radius:8px;font-weight:600;font-size:calc(16px*var(--f,1));font-variant-numeric:tabular-nums}
 .c.g,.tm.g{background:var(--gb);color:var(--gt)}.c.a,.tm.a{background:var(--ab);color:var(--at)}.c.r,.tm.r{background:var(--rb);color:var(--rt)}
 .z{color:var(--mu);opacity:.5;font-style:normal}.off{color:var(--mu);font-size:14px}
 .tr{flex:1;height:10px;border-radius:5px;background:var(--tk);margin:0 16px;position:relative}.tr i{display:block;height:100%;border-radius:5px}
 .fg{background:#34c759}.fa{background:#ff9f0a}.fr{background:#ff3b30}
 .tm{width:80px;text-align:center;font-weight:700;border-radius:8px;padding:3px 0;font-variant-numeric:tabular-nums}
 .tm.z{background:none}.row.sum .tm{background:none;color:var(--tx)}
-.tot{width:190px;padding-left:14px;flex:none}.tot b{font-size:19px}.tot em{font-style:normal;color:var(--mu);font-size:14px}
-.pb{display:block;height:6px;background:var(--tk);border-radius:3px;margin-top:4px;overflow:hidden}.pb i{display:block;height:100%}
+.tot{width:190px;padding-left:14px;flex:none}.tot b{font-size:calc(19px*var(--f,1))}.tot em{font-style:normal;color:var(--mu);font-size:14px}
+.pb{display:block;height:calc(6px*var(--f,1));background:var(--tk);border-radius:3px;margin-top:4px;overflow:hidden}.pb i{display:block;height:100%}
 .sdone{background:#34c759}.son{background:#0a84ff}.srisk{background:#ff9f0a}.sno{background:#ff3b30}
 .av{width:78px;text-align:center;flex:none;font-variant-numeric:tabular-nums}.stw{width:124px;text-align:center;flex:none}
-.st{display:inline-block;min-width:104px;padding:5px 0;border-radius:8px;font-size:13px;font-weight:800;letter-spacing:.3px}
+.st{display:inline-block;min-width:104px;padding:calc(5px*var(--f,1)) 0;border-radius:8px;font-size:calc(13px*var(--f,1));font-weight:800;letter-spacing:.3px}
 .st.done{background:var(--gb);color:var(--gt)}.st.on{background:var(--bb);color:var(--bt)}
 .st.risk{background:var(--ab);color:var(--at)}.st.no{background:var(--rb);color:var(--rt)}
 .legend{display:flex;justify-content:space-between;font-size:14px;color:var(--mu);padding:0 8px}"""
 
 
-def build_html(people, dates, n_days, today, now):
+def layout(n_people):
+    """Zoom rows in/out to fit the entries. 16:9 stays as long as rows fit; with many
+    members (up to ~30) rows shrink to MIN_ROW and the canvas grows taller instead."""
+    rows = n_people + 1                       # + group total row
+    rh = max(MIN_ROW, min(MAX_ROW, (BASE_H - OVERHEAD) / rows))
+    height = max(BASE_H, int(round(OVERHEAD + rh * rows)))
+    f = max(0.8, min(1.0, rh / 42))
+    return rh, f, height
+
+
+def snapshot(people, today):
+    """Show the board as it stood at the end of day `today` (0-based): hide later days, re-total."""
+    for p in people:
+        for d in range(today + 1, len(p["mins"])):
+            p["mins"][d], p["raw"][d] = 0, ""
+        p["total"] = sum(p["mins"])
+
+
+def build_html(people, dates, n_days, today, now, stamp="Updated"):
     e = html.escape
+    rh, f, height = layout(len(people))
     dtm = int(DAILY_TARGET_H * 60)
     wt = int(WEEKLY_TARGET_H * 60)
     elapsed = today + 1
@@ -236,7 +259,7 @@ def build_html(people, dates, n_days, today, now):
               f"<span class='tot'><b>{fmt(sum(p['total'] for p in people))}</b></span><span class='av'></span><span class='stw'></span></div>")
     cycle = f"{dstr(0, '%d %b')} &ndash; {dstr(n_days - 1, '%d %b')} &middot; " if dates else ""
     right = (f"<div class='panel pr'><div class='ph'><div><h1>This week</h1>"
-             f"<div class='sub'>Weekly target {WEEKLY_TARGET_H:g}h &middot; Updated {now.strftime('%d %b %Y')}</div></div>"
+             f"<div class='sub'>Weekly target {WEEKLY_TARGET_H:g}h &middot; {stamp} {(dates[today] if dates else now).strftime('%d %b %Y') if stamp != 'Updated' else now.strftime('%d %b %Y')}</div></div>"
              f"<div class='pill'>{cycle}Day {elapsed} of {n_days}</div></div>"
              f"<div class='chips'>{chips([(p['name'], fmt(p['total'])) for p in wk[:3]])}</div>"
              f"<div class='th'><span style='width:30px'></span><span style='width:112px'>Name</span>{hd}"
@@ -245,12 +268,14 @@ def build_html(people, dates, n_days, today, now):
     legend = (f"<div class='legend'><span>Day cells: green = {DAILY_TARGET_H:g}h+ &middot; amber = {DAILY_TARGET_H / 2:g}&ndash;{DAILY_TARGET_H:g}h &middot; red = under {DAILY_TARGET_H / 2:g}h</span>"
               f"<span>DONE = {WEEKLY_TARGET_H:g}h &middot; ON TRACK = avg {ONTRACK_AVG_H:g}h+ &middot; AT RISK = avg {ATRISK_AVG_H:g}h+ &middot; UNLIKELY = below</span></div>")
     return (f"<!doctype html><html><head><meta charset='utf-8'><style>{CSS}</style></head>"
-            f"<body><div class='wrap'>{left}{right}</div>{legend}</body></html>")
+            f"<body><div class='wrap'>{left}{right}</div>{legend}</body></html>").replace(
+        "<style>", f"<style>:root{{--rh:{rh:.1f}px;--f:{f:.3f};--H:{height}px}}", 1), height
 
 
 # ---------- caption (Telegram HTML) ----------
-def caption(people, today, now):
+def caption(people, today, now, day_date=None):
     e = html.escape
+    now = day_date or now
     td = sorted(people, key=lambda p: -p["mins"][today])[:3]
     wk = sorted(people, key=lambda p: -p["total"])[:3]
     d = now.day
@@ -259,37 +284,87 @@ def caption(people, today, now):
     medals = ["🥇", "🥈", "🥉"]
     t = "\n".join(f"{medals[i]} #{i + 1} {e(p['name'])} - <b>{fmt(p['mins'][today])}</b>" for i, p in enumerate(td))
     w = "\n".join(f"{medals[i]} #{i + 1} {e(p['name'])} - <b>{fmt(p['total'])}</b>" for i, p in enumerate(wk))
-    best = list(dict.fromkeys([td[0]["name"], wk[0]["name"], wk[1]["name"]]))
+    best = list(dict.fromkeys([td[0]["name"]] + [p["name"] for p in wk[:2]]))
     return (f"<b>{date_s}</b>. Y'all did great :)\n\n"
             f"<b>Top 3 Today</b>\n{t}\n\n"
             f"<b>Top 3 this week</b>\n{w}\n\n"
             f"<b>Highest chance of making it to the list in the group</b> = <b>{e(', '.join(best))}</b>")
 
 
-def main():
+# ---------- render + send ----------
+def render(offset=0, png="leaderboard.png"):
+    """offset=0 -> today's board, offset=1 -> yesterday's. Returns (caption, error)."""
     from playwright.sync_api import sync_playwright
-    # The study day runs 11:45 PM -> 11:45 PM (IST). Shifting the clock back 23h45m maps:
-    # 11:45 PM on 17 Oct (or a late start after midnight) -> 17 Oct; 8:40 PM on 17 Oct -> 16 Oct.
     now = dt.datetime.now(ZoneInfo("Asia/Kolkata"))
     people, dates, n_days = parse(fetch_rows())
-    today = pick_day(people, n_days, dates, now)
-    page_html = build_html(people, dates, n_days, today, now)
+    today = pick_day(people, n_days, dates, now) - offset
+    if today < 0:
+        return None, "There is no earlier day in this cycle yet."
+    snapshot(people, today)  # board exactly as it stood at the end of that day
+    page_html, height = build_html(people, dates, n_days, today, now, "Updated" if offset == 0 else "Snapshot")
     with sync_playwright() as pw:
-        b = pw.chromium.launch()
-        pg = b.new_page(viewport={"width": 1920, "height": 1080}, device_scale_factor=1.25)
+        b = pw.chromium.launch(executable_path=os.environ.get("CHROME_PATH") or None)
+        pg = b.new_page(viewport={"width": 1920, "height": height}, device_scale_factor=1.25)
         pg.set_content(page_html)
-        pg.screenshot(path="leaderboard.png")
+        pg.screenshot(path=png)
         b.close()
-    cap = caption(people, today, now)
+    cap = caption(people, today, now, dates[today] if dates else None)
+    print(f"{len(people)} members, canvas 1920x{height}")
     print(cap)
-    if DRY:
-        return
-    r = requests.post(
-        f"https://api.telegram.org/bot{BOT_TOKEN}/sendPhoto",
-        data={"chat_id": CHAT_ID, "message_thread_id": THREAD_ID, "caption": cap, "parse_mode": "HTML"},
-        files={"photo": open("leaderboard.png", "rb")}, timeout=60)
-    print(r.status_code, r.text)
+    return cap, None
+
+
+def tg(method, **kw):
+    r = requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/{method}", timeout=60, **kw)
+    print(method, r.status_code, r.text[:300])
     r.raise_for_status()
+    return r.json()
+
+
+def send_board(cap, png="leaderboard.png"):
+    with open(png, "rb") as f:
+        tg("sendPhoto", data={"chat_id": CHAT_ID, "message_thread_id": THREAD_ID, "caption": cap, "parse_mode": "HTML"},
+           files={"photo": f})
+
+
+# ---------- admin commands (polled from Telegram) ----------
+COMMANDS = {"/today": "today", "/leaderboard": "today", "/rerun": "today", "/yesterday": "yesterday"}
+
+
+def poll():
+    """Read pending Telegram updates, keep commands sent by an admin, acknowledge everything.
+    Prints the distinct actions (e.g. 'today yesterday') and exposes them as the `actions` step output."""
+    import json
+    upd = tg("getUpdates", data={"timeout": 0, "allowed_updates": json.dumps(["message"])})["result"]
+    actions = []
+    for u in upd:
+        m = u.get("message") or {}
+        uid = (m.get("from") or {}).get("id")
+        words = (m.get("text") or "").split()
+        cmd = words[0].split("@")[0].lower() if words else ""
+        if uid in ADMIN_IDS and cmd in COMMANDS and COMMANDS[cmd] not in actions:
+            actions.append(COMMANDS[cmd])
+    if upd:
+        tg("getUpdates", data={"offset": upd[-1]["update_id"] + 1, "timeout": 0})
+    out = " ".join(actions)
+    print("actions:", out or "(none)")
+    if os.environ.get("GITHUB_OUTPUT"):
+        with open(os.environ["GITHUB_OUTPUT"], "a") as f:
+            f.write(f"actions={out}\n")
+
+
+def main():
+    if "--poll" in sys.argv:
+        return poll()
+    offset = 1 if "--yesterday" in sys.argv else 0
+    cap, err = render(offset)
+    if err:
+        print(err)
+        if not DRY and os.environ.get("ALERT_CHAT_ID"):
+            tg("sendMessage", data={"chat_id": os.environ["ALERT_CHAT_ID"], "text": err})
+        return
+    if not DRY:
+        send_board(cap)
 
 
 if __name__ == "__main__":
