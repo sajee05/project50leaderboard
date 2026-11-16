@@ -454,9 +454,27 @@ GROUP_CMDS = {"/daily": "today", "/today": "today", "/leaderboard": "today", "/r
               "/weekly": "weekly", "/monthly": "monthly", "/show": "show"}
 
 
+MENU = [("daily", "Post today's leaderboard to the group"), ("yesterday", "Post yesterday's leaderboard to the group"),
+        ("weekly", "Save the finished week and post the weekly podium video"),
+        ("monthly", "Post the monthly leaderboard and video"),
+        ("show", "Send specimen weekly and monthly boards and videos to my DM")]
+
+
+def set_menu():
+    """Command menu visible only in the admins' own chats (nobody else sees or can use it)."""
+    import json
+    for uid in ADMIN_IDS:
+        try:
+            tg("setMyCommands", data={"commands": json.dumps([{"command": c, "description": d} for c, d in MENU]),
+                                      "scope": json.dumps({"type": "chat", "chat_id": uid})})
+        except Exception as ex:  # e.g. admin has not started the bot yet
+            print("menu not set for", uid, ex)
+
+
 def poll():
     """Collect admin commands and Rerun-button presses, acknowledge them, write actions.json."""
     import json
+    set_menu()
     upd = tg("getUpdates", data={"timeout": 0, "allowed_updates": json.dumps(["message", "callback_query"])})["result"]
     actions = []
 
