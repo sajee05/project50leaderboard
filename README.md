@@ -16,7 +16,23 @@ Admin IDs come from `ADMIN_IDS` (default `7574436736`). Messages from anyone els
 | `/show` | Specimens of the weekly and monthly boards and videos, sent to your DM |
 
 **Scheduling:** in the bot's chat, type a command, long-press send, *Schedule message*, set *Repeat* (daily / weekly / monthly).
-The "Bot commands" workflow checks for new messages every 5 minutes, so posts can arrive a few minutes after the scheduled time.
+
+**How messages reach GitHub (instant, free):** Telegram sends each message to a Cloudflare Worker
+(`worker/telegram-webhook.js`), which drops anything that is not an admin command and otherwise starts the
+"Bot commands" workflow through `repository_dispatch`. No polling and no cron site.
+
+## One-time Worker setup
+
+1. Create a fine-grained GitHub token for this repo only with **Contents: Read and write**.
+2. Cloudflare dashboard > Workers & Pages > Create > Hello World > Deploy, then *Edit code*, paste `worker/telegram-webhook.js`, Deploy.
+3. Worker > Settings > Variables and Secrets:
+   secrets `BOT_TOKEN`, `GH_TOKEN` (the token from step 1), `WEBHOOK_SECRET` (any long random string);
+   variables `REPO` = `sajee05/project50leaderboard`, `ADMIN_IDS` = `7574436736`.
+4. Point Telegram at the Worker (open this URL once in a browser, filled in):
+   `https://api.telegram.org/bot<BOT_TOKEN>/setWebhook?url=<WORKER_URL>&secret_token=<WEBHOOK_SECRET>&allowed_updates=["message","callback_query"]`
+5. Send `/show` to the bot. You should get "On it" within a second.
+
+Remove the webhook with `.../deleteWebhook` if you ever want to go back to polling (manual runs of the workflow use `getUpdates`).
 
 **Failures:** you get a DM with a **Rerun** button. The button remembers the exact day, so a rerun after midnight still reposts the
 right date. Automatic and rerun boards use the previous day when they run before 06:00 IST (`ROLLOVER_HOUR`).
@@ -29,4 +45,4 @@ The monthly board is computed from them.
 ## Setup
 
 Secrets: `BOT_TOKEN`, `SHEET_CSV_URL` and/or `GOOGLE_SA_JSON`, optional `ALERT_CHAT_ID` (defaults to the admin ID).
-The bot must have no webhook set (commands are read with `getUpdates`). Message the bot once (`/start`) so it can DM you.
+Message the bot once (`/start`) so it can DM you.

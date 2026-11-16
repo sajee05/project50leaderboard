@@ -472,17 +472,14 @@ def set_menu():
             print("menu not set for", uid, ex)
 
 
-def poll():
-    """Collect admin commands and Rerun-button presses, acknowledge them, write actions.json."""
-    import json
-    set_menu()
-    upd = tg("getUpdates", data={"timeout": 0, "allowed_updates": json.dumps(["message", "callback_query"])})["result"]
+def actions_from_updates(upd):
+    """Turn Telegram updates into actions. Only admins are honoured; everyone else is ignored."""
     actions = []
-    print(f"{len(upd)} pending update(s); admins = {sorted(ADMIN_IDS)}")
+    print(f"{len(upd)} update(s); admins = {sorted(ADMIN_IDS)}")
     for u in upd:
         m = u.get("message") or {}
         cq = u.get("callback_query") or {}
-        print("  update", u["update_id"], "from", (m.get("from") or cq.get("from") or {}).get("id"),
+        print("  update", u.get("update_id"), "from", (m.get("from") or cq.get("from") or {}).get("id"),
               "chat", (m.get("chat") or {}).get("id"), "text", repr((m.get("text") or cq.get("data") or "")[:30]))
 
     def add(a):
@@ -495,24 +492,55 @@ def poll():
             if (cq.get("from") or {}).get("id") in ADMIN_IDS and (cq.get("data") or "").startswith("rr:"):
                 _, mode, d = cq["data"].split(":", 2)
                 add({"do": "rerun", "mode": mode, "date": d, "chat": cq["message"]["chat"]["id"]})
-                tg("answerCallbackQuery", data={"callback_query_id": cq["id"], "text": "Re-running, result in a few minutes"})
             continue
         m = u.get("message") or {}
         if (m.get("from") or {}).get("id") not in ADMIN_IDS:
             continue
         words = (m.get("text") or "").split()
         cmd = words[0].split("@")[0].lower() if words else ""
-        chat = m["chat"]["id"]
         if cmd in GROUP_CMDS:
-            add({"do": GROUP_CMDS[cmd], "chat": chat, "force": "force" in [w.lower() for w in words[1:]]})
-    if upd:
-        tg("getUpdates", data={"offset": upd[-1]["update_id"] + 1, "timeout": 0})
+            add({"do": GROUP_CMDS[cmd], "chat": m["chat"]["id"], "force": "force" in [w.lower() for w in words[1:]]})
+    return actions
+
+
+def save_actions(actions):
+    import json
     with open("actions.json", "w") as f:
         json.dump(actions, f)
     print("actions:", actions or "(none)")
     if os.environ.get("GITHUB_OUTPUT"):
         with open(os.environ["GITHUB_OUTPUT"], "a") as f:
             f.write(f"has={'true' if actions else 'false'}\n")
+
+
+def poll():
+    """Fallback without a webhook: read pending updates with getUpdates, acknowledge them."""
+    import json
+    set_menu()
+    try:
+        upd = tg("getUpdates", data={"timeout": 0, "allowed_updates": json.dumps(["message", "callback_query"])})["result"]
+    except requests.HTTPError as ex:
+        if ex.response is not None and ex.response.status_code == 409:
+            print("A webhook is set, so getUpdates is off; commands arrive through the webhook instead.")
+            return save_actions([])
+        raise
+    for u in upd:
+        cq = u.get("callback_query")
+        if cq and (cq.get("from") or {}).get("id") in ADMIN_IDS:
+            tg("answerCallbackQuery", data={"callback_query_id": cq["id"], "text": "Re-running, result in a few minutes"})
+    actions = actions_from_updates(upd)
+    if upd:
+        tg("getUpdates", data={"offset": upd[-1]["update_id"] + 1, "timeout": 0})
+    save_actions(actions)
+
+
+def from_webhook():
+    """Webhook path: the Worker forwards one Telegram update as UPDATE_JSON."""
+    import json
+    set_menu()
+    raw = os.environ.get("UPDATE_JSON", "").strip()
+    upd = json.loads(raw) if raw and raw != "null" else None
+    save_actions(actions_from_updates([upd] if upd else []))
 
 
 def run_board(on_date, chat_for_reply=None, label=""):
@@ -562,6 +590,8 @@ def process():
 def main():
     if "--poll" in sys.argv:
         return poll()
+    if "--update" in sys.argv:
+        return from_webhook()
     if "--process" in sys.argv:
         return process()
     if "--weekly" in sys.argv:
