@@ -296,6 +296,15 @@ def caption(people, today, now, day_date=None):
             f"<b>Highest chance of making it to the list in the group</b> = <b>{e(', '.join(best))}</b>")
 
 
+def top3_caption(rows, head, cheer, what):
+    """Caption for the weekly video / monthly board / monthly video: heading, top 3, then a random quote."""
+    import quotes
+    e = html.escape
+    medals = ["🥇", "🥈", "🥉"]
+    lines = "\n".join(f"{medals[i]} #{i + 1} {e(r['name'])} - <b>{fmt(r['total'])}</b>" for i, r in enumerate(rows[:3]))
+    return f"{head}\n{cheer}\n\n<b>Top 3 {what}</b>\n{lines}\n\n{quotes.block()}"
+
+
 # ---------- helpers ----------
 def now_ist():
     return dt.datetime.now(ZoneInfo("Asia/Kolkata"))
@@ -403,10 +412,11 @@ def period_post(weeks, k, chat=None, specimen=False, tag=""):
     page, h = periods.board_html(title, span, rows, labels, specimen)
     png = f"period_{k}.png"
     shoot(page, 1700, 400, png)  # short viewport + full_page: image is exactly as tall as the content
-    send_photo(png, f"<b>{html.escape(title)}</b> · {span}" + (" · <i>specimen</i>" if specimen else "") + tag, chat)
+    spec = " · <i>specimen</i>" if specimen else ""
+    send_photo(png, top3_caption(rows, f"<b>{html.escape(title)}</b> · {span}{spec}", "Y'all did great :)", "this month") + tag, chat)
     mp4 = f"period_{k}.mp4"
     secs = video_for([(r["name"], r["total"]) for r in rows], title, span, ("SPECIMEN · " if specimen else "") + "MONTHLY PODIUM", mp4)
-    send_video(mp4, f"<b>{html.escape(title)}</b> podium" + (" · <i>specimen</i>" if specimen else ""), chat, secs)
+    send_video(mp4, top3_caption(rows, f"<b>{html.escape(title)}</b> podium · {span}{spec}", "Here's the month in one clip :)", "this month"), chat, secs)
 
 
 def weekly_run(force=False, on_date=None):
@@ -423,7 +433,7 @@ def weekly_run(force=False, on_date=None):
     rng = f"{dates[0].strftime('%d %b')} – {dates[-1].strftime('%d %b %Y')}"
     secs = weekly_video([(r["name"], r["total"]) for r in rows], f"Week {n}", f"{rng} · weekly total", "WEEKLY PODIUM", "weekly.mp4")
     if not DRY:
-        send_video("weekly.mp4", f"<b>Week {n} podium</b> · {rng}", None, secs)
+        send_video("weekly.mp4", top3_caption(rows, f"<b>Week {n} podium</b> · {rng}", "Y'all did great :)", "this week"), None, secs)
     return f"Weekly podium for {rng} posted. Week {n} is saved in data/weeks."
 
 
@@ -447,7 +457,8 @@ def specimen(chat):
     rows = periods.aggregate([live])
     secs = weekly_video([(r["name"], r["total"]) for r in rows], "Weekly podium",
                      f"{dates[0].strftime('%d %b')} – {dates[-1].strftime('%d %b %Y')} · weekly total", "SPECIMEN · WEEKLY PODIUM", "weekly.mp4")
-    send_video("weekly.mp4", "<b>Weekly podium video</b> · <i>specimen</i>", chat, secs)
+    send_video("weekly.mp4", top3_caption(rows, "<b>Weekly podium</b> · <i>specimen</i> · "
+               f"{dates[0].strftime('%d %b')} – {dates[-1].strftime('%d %b %Y')}", "Y'all did great :)", "this week"), chat, secs)
     period_post(periods.specimen_weeks(archived, live, 4), 4, chat, specimen=True)
     dm(chat, "Done. Weeks with no saved history yet are padded with copies of the latest week for these specimens.")
 
