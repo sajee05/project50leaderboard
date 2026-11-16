@@ -125,6 +125,93 @@ window.render=render; window.TOTAL=TOTAL;
 </script></body></html>"""
 
 
+# ---------- original soundtrack (synthesised here, so no licensing issues) ----------
+def make_music(total, path, rate=44100):
+    """Upbeat 120 bpm loop (I-V-vi-IV) with a hit on each podium rise and a fanfare on the winner's reveal."""
+    import array, math, random, wave
+    n = int(total * rate)
+    L = [0.0] * n
+    rnd = random.Random(5)
+
+    def add(t0, dur, fn, gain):
+        i0, cnt = int(t0 * rate), int(dur * rate)
+        for k in range(cnt):
+            i = i0 + k
+            if i >= n:
+                break
+            L[i] += fn(k / rate) * gain
+
+    def pluck(freq, dur=0.32):
+        return lambda t: (math.sin(6.283 * freq * t) + .35 * math.sin(12.566 * freq * t) + .15 * math.sin(18.85 * freq * t)) \
+            * math.exp(-t * 9) * min(1, t * 400)
+
+    def bass(freq):
+        return lambda t: math.sin(6.283 * freq * t) * math.exp(-t * 4) * min(1, t * 300)
+
+    def kick(t):
+        return math.sin(6.283 * (45 * t + 70 * (1 - math.exp(-t * 28)) / 28 * 28 / 28 * 0.0 + 75 * (1 - math.exp(-t * 30)) / 30)) * math.exp(-t * 11)
+
+    def hat(t):
+        return (rnd.random() * 2 - 1) * math.exp(-t * 55)
+
+    def thump(t):  # impact for a podium rise
+        return math.sin(6.283 * (38 + 60 * math.exp(-t * 9)) * t) * math.exp(-t * 3.2)
+
+    def whoosh(t):  # rising noise before the hit
+        return (rnd.random() * 2 - 1) * (t / 0.5) ** 2 * (1 if t < 0.5 else 0)
+
+    chords = [(261.63, [261.63, 329.63, 392.0]), (196.0, [196.0, 246.94, 293.66]),
+              (220.0, [220.0, 261.63, 329.63]), (174.61, [174.61, 220.0, 261.63])]
+    beat = 0.5
+    t, step = 0.0, 0
+    while t < total:
+        bar = int(t / (4 * beat)) % 4
+        root, tones = chords[bar]
+        b = int(round(t / beat))
+        if t >= 0.5:
+            if step % 2 == 0:
+                add(t, 0.5, bass(root / 2 if root > 200 else root), 0.34)
+            add(t, 0.3, pluck(tones[step % 3] * 2), 0.16)              # 8th-note arpeggio on every step
+            if t >= 1.0 and step % 2 == 0:
+                add(t, 0.35, kick, 0.5)
+            if step % 2 == 1:
+                add(t, 0.12, hat, 0.09)
+        step += 1
+        t += beat / 2
+    # podium hits (match the video: 3rd at 1.2s, 2nd at 3.0s, 1st at 5.0s)
+    for ht, g in ((1.2, .55), (3.0, .62), (5.0, .8)):
+        add(ht - 0.5, 0.5, whoosh, 0.22)
+        add(ht, 1.2, thump, g)
+    # winner fanfare + confetti sparkle
+    for k, f in enumerate((523.25, 659.25, 783.99, 1046.5)):
+        add(5.75 + k * 0.1, 1.2, pluck(f), 0.3)
+    for k in range(14):
+        add(6.0 + k * 0.09, 0.4, pluck(1568 + 90 * (k % 5)), 0.07)
+    peak = max(abs(x) for x in L) or 1
+    fade = int(1.6 * rate)
+    out = array.array("h")
+    for i, x in enumerate(L):
+        g = 0.85 / peak * min(1, (n - i) / fade) * min(1, i / (0.05 * rate))
+        out.append(int(max(-1, min(1, x * g)) * 32767))
+    with wave.open(path, "wb") as w:
+        w.setnchannels(1)
+        w.setsampwidth(2)
+        w.setframerate(rate)
+        w.writeframes(out.tobytes())
+    return path
+
+
+def audio_input(total, workdir):
+    """(ffmpeg args, description). MUSIC_FILE or assets/music.* wins; otherwise the built-in original score."""
+    import glob
+    mine = os.environ.get("MUSIC_FILE") or next(iter(sorted(glob.glob("assets/music.*"))), "")
+    if mine and os.path.exists(mine):
+        return ["-i", mine, "-af", f"afade=t=out:st={max(0, total - 1.6):.2f}:d=1.6", "-t", f"{total:.2f}"], f"custom audio {mine}"
+    wav = os.path.join(workdir, "podium_music.wav")
+    make_music(total, wav)
+    return ["-i", wav], "built-in score"
+
+
 def build_page(title, subtitle, kicker, ranked, list_label="THE REST OF THE BOARD", hold=3.0):
     """ranked: [(name, minutes), ...] already sorted best-first (any length, up to ~30)."""
     top = [{"name": n, "mins": m} for n, m in ranked[:3]]
@@ -139,9 +226,12 @@ def build_page(title, subtitle, kicker, ranked, list_label="THE REST OF THE BOAR
 def make_video(out_path, title, subtitle, kicker, ranked, list_label="THE REST OF THE BOARD", fps=FPS):
     from playwright.sync_api import sync_playwright
     page_html, total = build_page(title, subtitle, kicker, ranked, list_label)
+    a_args, a_desc = audio_input(total, os.path.dirname(os.path.abspath(out_path)))
+    print("audio:", a_desc)
     ff = subprocess.Popen(
-        ["ffmpeg", "-y", "-loglevel", "error", "-f", "image2pipe", "-framerate", str(fps), "-c:v", "mjpeg", "-i", "-",
-         "-c:v", "libx264", "-pix_fmt", "yuv420p", "-preset", "veryfast", "-crf", "21", "-movflags", "+faststart", out_path],
+        ["ffmpeg", "-y", "-loglevel", "error", "-f", "image2pipe", "-framerate", str(fps), "-c:v", "mjpeg", "-i", "-", *a_args,
+         "-c:v", "libx264", "-pix_fmt", "yuv420p", "-preset", "veryfast", "-crf", "21",
+         "-c:a", "aac", "-b:a", "160k", "-shortest", "-movflags", "+faststart", out_path],
         stdin=subprocess.PIPE)
     frames = int(total * fps)
     with sync_playwright() as pw:
