@@ -56,6 +56,7 @@ In Cloudflare: Worker > Settings > Triggers > Cron Triggers > Add, one per line 
 | Cron | Runs | IST |
 |---|---|---|
 | `25 18 * * *` | `/daily` | every night 23:55 |
-| `40 18 * * 0` | `/weekly` | Monday 00:10 |
 
 The monthly board and video post by themselves right after every 4th saved week (the weekly run triggers them), so there is no monthly cron. `/monthly` still works by hand any time.
+
+The weekly video posts by itself after the daily board of the cycle's last (7th) day, and the monthly after every 4th saved week, so the only cron you need is `/daily`. `/weekly` and `/monthly` still work by hand.

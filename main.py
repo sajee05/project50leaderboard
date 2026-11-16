@@ -580,6 +580,7 @@ def run_board(on_date, chat_for_reply=None, label=""):
 def run_action(a, chat):
     if a["do"] == "today":
         run_board(None, chat, "today's leaderboard")
+        chain_weekly(chat)
     elif a["do"] == "yesterday":
         run_board(board_date() - dt.timedelta(days=1), chat, "yesterday's leaderboard")
     elif a["do"] == "weekly":
@@ -596,6 +597,19 @@ def run_action(a, chat):
             dm(chat, monthly_run())
         else:
             run_board(d, chat, f"the {d.strftime('%d %b')} leaderboard")
+
+
+def chain_weekly(chat):
+    """After the daily board of a cycle's LAST day (the 7th day), save the week and post the weekly video automatically."""
+    people, dates, n_days, last = week_state()
+    if last != n_days - 1:
+        return
+    try:
+        dm(chat, weekly_run())
+    except Exception as ex:   # the daily board is already out, so the admin gets a weekly-specific Rerun button
+        print("weekly chain failed:", ex)
+        dm(chat, f"The daily board posted, but the weekly step failed: {html.escape(str(ex))[:300]}",
+           [[{"text": "🔁 Rerun weekly", "callback_data": f"rr:weekly:{board_date()}"}]])
 
 
 RETRY_WAITS = [45, 120]   # seconds before the 2nd and 3rd attempt

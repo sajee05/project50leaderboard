@@ -30,7 +30,6 @@ const COMMANDS = ["/daily", "/today", "/leaderboard", "/rerun", "/yesterday", "/
 // The cron text must match one of these exactly.
 const SCHEDULE = {
   "25 18 * * *": "/daily",    // every night 23:55 IST
-  "40 18 * * 0": "/weekly",   // Sunday 18:40 UTC = Monday 00:10 IST
 };
 
 export default {
