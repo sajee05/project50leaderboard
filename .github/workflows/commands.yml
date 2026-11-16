@@ -11,7 +11,9 @@ name: Bot commands
 # NOTE: getUpdates only works while the bot has no webhook set.
 on:
   schedule:
-    - cron: "*/5 * * * *"
+    - cron: "*/5 * * * *"        # best effort: GitHub often runs this late or skips runs
+  repository_dispatch:
+    types: [poll_commands]        # optional reliable ping (e.g. every minute from any free pinger / Worker)
   workflow_dispatch:
 
 permissions:
