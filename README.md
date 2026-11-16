@@ -13,7 +13,7 @@ Admin IDs come from `ADMIN_IDS` (default `7574436736`). Messages from anyone els
 | `/yesterday` | Post yesterday's leaderboard to the group |
 | `/weekly` | Archive the finished cycle to `data/weeks/<cycle-start>.json` and post the weekly podium video (`/weekly force` to run mid-cycle) |
 | `/monthly` | Post the monthly leaderboard + podium video built from the last 4 archived weeks |
-| `/show` | Specimens of the weekly and monthly boards and videos, sent to your DM |
+| `/show` | Specimens of the weekly video and the monthly board + video, sent to your DM |
 
 **Scheduling:** in the bot's chat, type a command, long-press send, *Schedule message*, set *Repeat* (daily / weekly / monthly).
 

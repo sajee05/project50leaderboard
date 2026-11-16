@@ -233,23 +233,20 @@ def build_page(title, subtitle, kicker, ranked, list_label="THE REST OF THE BOAR
     return PAGE.replace("__DATA__", data), total
 
 
-def make_video(out_path, title, subtitle, kicker, ranked, list_label="THE REST OF THE BOARD", fps=FPS):
+def encode(page_html, total, out_path, a_args, a_filter, fps=FPS):
+    """Step render(t) frame by frame, pipe JPEGs into ffmpeg together with the audio inputs/filter."""
     from playwright.sync_api import sync_playwright
-    page_html, total = build_page(title, subtitle, kicker, ranked, list_label)
-    a_args, a_filter, a_desc = audio_input(total, os.path.dirname(os.path.abspath(out_path)))
-    print("audio:", a_desc)
     ff = subprocess.Popen(
         ["ffmpeg", "-y", "-loglevel", "error", "-f", "image2pipe", "-framerate", str(fps), "-c:v", "mjpeg", "-i", "-", *a_args,
          "-filter_complex", a_filter, "-map", "0:v", "-map", "[a]", "-t", f"{total:.3f}",
          "-c:v", "libx264", "-pix_fmt", "yuv420p", "-preset", "veryfast", "-crf", "21",
          "-c:a", "aac", "-b:a", "160k", "-shortest", "-movflags", "+faststart", out_path],
         stdin=subprocess.PIPE)
-    frames = int(total * fps)
     with sync_playwright() as pw:
         b = pw.chromium.launch(executable_path=os.environ.get("CHROME_PATH") or None)
         pg = b.new_page(viewport={"width": W, "height": H})
         pg.set_content(page_html)
-        for i in range(frames):
+        for i in range(int(total * fps)):
             pg.evaluate("t=>render(t)", i / fps)
             ff.stdin.write(pg.screenshot(type="jpeg", quality=88))
         b.close()
@@ -257,3 +254,11 @@ def make_video(out_path, title, subtitle, kicker, ranked, list_label="THE REST O
     if ff.wait() != 0:
         raise RuntimeError("ffmpeg failed")
     return total
+
+
+def make_video(out_path, title, subtitle, kicker, ranked, list_label="THE REST OF THE BOARD", fps=FPS):
+    """Monthly style: podium reveal, then the rest of the board."""
+    page_html, total = build_page(title, subtitle, kicker, ranked, list_label)
+    a_args, a_filter, a_desc = audio_input(total, os.path.dirname(os.path.abspath(out_path)))
+    print("audio:", a_desc)
+    return encode(page_html, total, out_path, a_args, a_filter, fps)

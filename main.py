@@ -390,6 +390,11 @@ def video_for(ranked, title, subtitle, kicker, out, label="THE REST OF THE BOARD
     return podium.make_video(out, title, subtitle, kicker, ranked, label)
 
 
+def weekly_video(ranked, title, subtitle, kicker, out):
+    import podium_weekly
+    return podium_weekly.make_weekly_video(out, title, subtitle, kicker, ranked)
+
+
 def period_post(weeks, k, chat=None, specimen=False, tag=""):
     """Board image + podium video for the last k weeks."""
     import periods
@@ -416,7 +421,7 @@ def weekly_run(force=False, on_date=None):
     print("archived", path, f"({n} weeks stored)")
     rows = periods.aggregate([wk])
     rng = f"{dates[0].strftime('%d %b')} – {dates[-1].strftime('%d %b %Y')}"
-    secs = video_for([(r["name"], r["total"]) for r in rows], f"Week {n}", f"{rng} · weekly total", "WEEKLY PODIUM", "weekly.mp4")
+    secs = weekly_video([(r["name"], r["total"]) for r in rows], f"Week {n}", f"{rng} · weekly total", "WEEKLY PODIUM", "weekly.mp4")
     if not DRY:
         send_video("weekly.mp4", f"<b>Week {n} podium</b> · {rng}", None, secs)
     return f"Weekly podium for {rng} posted. Week {n} is saved in data/weeks."
@@ -438,12 +443,9 @@ def specimen(chat):
     people, dates, n_days, last = week_state()
     live = periods.week_dict(people, dates, n_days, last)
     archived = [w for w in periods.load_weeks() if w["cycle_start"] != live["cycle_start"]]
-    dm(chat, "Preparing specimens: weekly and monthly boards with videos. This takes a few minutes.")
-    cap, err = render(None, "leaderboard.png")
-    if cap:
-        send_photo("leaderboard.png", "<b>Weekly leaderboard</b> · <i>specimen</i>\n\n" + cap, chat)
+    dm(chat, "Preparing specimens: the weekly video, then the monthly leaderboard and video. This takes a few minutes.")
     rows = periods.aggregate([live])
-    secs = video_for([(r["name"], r["total"]) for r in rows], "Weekly podium",
+    secs = weekly_video([(r["name"], r["total"]) for r in rows], "Weekly podium",
                      f"{dates[0].strftime('%d %b')} – {dates[-1].strftime('%d %b %Y')} · weekly total", "SPECIMEN · WEEKLY PODIUM", "weekly.mp4")
     send_video("weekly.mp4", "<b>Weekly podium video</b> · <i>specimen</i>", chat, secs)
     period_post(periods.specimen_weeks(archived, live, 4), 4, chat, specimen=True)
@@ -458,7 +460,7 @@ GROUP_CMDS = {"/daily": "today", "/today": "today", "/leaderboard": "today", "/r
 MENU = [("daily", "Post today's leaderboard to the group"), ("yesterday", "Post yesterday's leaderboard to the group"),
         ("weekly", "Save the finished week and post the weekly podium video"),
         ("monthly", "Post the monthly leaderboard and video"),
-        ("show", "Send specimen weekly and monthly boards and videos to my DM")]
+        ("show", "Send specimen weekly video and monthly board + video to my DM")]
 
 
 def set_menu():
