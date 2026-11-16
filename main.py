@@ -431,6 +431,7 @@ def weekly_run(force=False, on_date=None):
     if last != n_days - 1 and not force:
         return f"This cycle is only on day {last + 1} of {n_days}, so it is not finished. Send <code>/weekly force</code> to run it anyway."
     wk = periods.week_dict(people, dates, n_days, last)
+    is_new = not os.path.exists(os.path.join(periods.DATA_DIR, f"{wk['cycle_start']}.json"))
     path = periods.save_week(wk)
     n = len(periods.load_weeks())
     print("archived", path, f"({n} weeks stored)")
@@ -439,7 +440,10 @@ def weekly_run(force=False, on_date=None):
     secs = weekly_video([(r["name"], r["total"]) for r in rows], f"Week {n}", f"{rng} · weekly total", "WEEKLY PODIUM", "weekly.mp4")
     if not DRY:
         send_video("weekly.mp4", top3_caption(rows, f"<b>Week {n} podium</b> · {rng}", "Y'all did great :)", "this week"), None, secs)
-    return f"Weekly podium for {rng} posted. Week {n} is saved in data/weeks."
+    msg = f"Weekly podium for {rng} posted. Week {n} is saved in data/weeks."
+    if is_new and n % 4 == 0 and not DRY:   # every 4th saved week completes a month: post the monthly board + video too
+        msg += " " + monthly_run()
+    return msg
 
 
 def monthly_run(on_date=None):

@@ -31,7 +31,6 @@ const COMMANDS = ["/daily", "/today", "/leaderboard", "/rerun", "/yesterday", "/
 const SCHEDULE = {
   "25 18 * * *": "/daily",    // every night 23:55 IST
   "40 18 * * 0": "/weekly",   // Sunday 18:40 UTC = Monday 00:10 IST
-  "30 3 1 * *": "/monthly",   // 1st of the month, 09:00 IST
 };
 
 export default {
