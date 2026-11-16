@@ -126,8 +126,9 @@ window.render=render; window.TOTAL=TOTAL;
 
 
 # ---------- original soundtrack (synthesised here, so no licensing issues) ----------
-def make_music(total, path, rate=44100):
-    """Upbeat 120 bpm loop (I-V-vi-IV) with a hit on each podium rise and a fanfare on the winner's reveal."""
+def make_music(total, path, rate=44100, sfx_only=False):
+    """Upbeat 120 bpm loop (I-V-vi-IV) with a hit on each podium rise and a fanfare on the winner's reveal.
+    sfx_only=True keeps just the hits / whoosh / fanfare / sparkle, to layer over a track you supply."""
     import array, math, random, wave
     n = int(total * rate)
     L = [0.0] * n
@@ -164,7 +165,7 @@ def make_music(total, path, rate=44100):
               (220.0, [220.0, 261.63, 329.63]), (174.61, [174.61, 220.0, 261.63])]
     beat = 0.5
     t, step = 0.0, 0
-    while t < total:
+    while t < total and not sfx_only:
         bar = int(t / (4 * beat)) % 4
         root, tones = chords[bar]
         b = int(round(t / beat))
@@ -202,15 +203,24 @@ def make_music(total, path, rate=44100):
 
 
 def audio_input(total, workdir):
-    """(ffmpeg args, description). MUSIC_FILE or assets/music.* wins; otherwise the built-in original score."""
+    """Returns (ffmpeg input args, filter_complex, description) for the audio.
+    MUSIC_FILE or assets/music.* is used as background music: trimmed from its start to the video length
+    (looped if shorter), with a smooth 1.5 s fade-out, and the sound effects are layered on top.
+    With no file, the built-in original score is used."""
     import glob
     mine = os.environ.get("MUSIC_FILE") or next(iter(sorted(glob.glob("assets/music.*"))), "")
     if mine and os.path.exists(mine):
-        return ["-i", mine, "-af", f"afade=t=out:st={max(0, total - 1.6):.2f}:d=1.6", "-t", f"{total:.2f}"], f"custom audio {mine}"
+        fx = os.path.join(workdir, "podium_sfx.wav")
+        make_music(total, fx, sfx_only=True)
+        st = max(0.0, total - 1.5)
+        fc = (f"[1:a]aformat=sample_rates=44100:channel_layouts=stereo,atrim=0:{total:.3f},asetpts=PTS-STARTPTS,"
+              f"afade=t=in:st=0:d=0.4,afade=t=out:st={st:.3f}:d=1.5:curve=qsin,volume=0.75[bg];"
+              f"[2:a]aformat=sample_rates=44100:channel_layouts=stereo,volume=0.9[fx];"
+              f"[bg][fx]amix=inputs=2:duration=longest:normalize=0,alimiter=limit=0.95[a]")
+        return ["-stream_loop", "-1", "-i", mine, "-i", fx], fc, f"your music {mine} + sound effects"
     wav = os.path.join(workdir, "podium_music.wav")
     make_music(total, wav)
-    return ["-i", wav], "built-in score"
-
+    return ["-i", wav], "[1:a]anull[a]", "built-in score"
 
 def build_page(title, subtitle, kicker, ranked, list_label="THE REST OF THE BOARD", hold=3.0):
     """ranked: [(name, minutes), ...] already sorted best-first (any length, up to ~30)."""
@@ -226,10 +236,11 @@ def build_page(title, subtitle, kicker, ranked, list_label="THE REST OF THE BOAR
 def make_video(out_path, title, subtitle, kicker, ranked, list_label="THE REST OF THE BOARD", fps=FPS):
     from playwright.sync_api import sync_playwright
     page_html, total = build_page(title, subtitle, kicker, ranked, list_label)
-    a_args, a_desc = audio_input(total, os.path.dirname(os.path.abspath(out_path)))
+    a_args, a_filter, a_desc = audio_input(total, os.path.dirname(os.path.abspath(out_path)))
     print("audio:", a_desc)
     ff = subprocess.Popen(
         ["ffmpeg", "-y", "-loglevel", "error", "-f", "image2pipe", "-framerate", str(fps), "-c:v", "mjpeg", "-i", "-", *a_args,
+         "-filter_complex", a_filter, "-map", "0:v", "-map", "[a]", "-t", f"{total:.3f}",
          "-c:v", "libx264", "-pix_fmt", "yuv420p", "-preset", "veryfast", "-crf", "21",
          "-c:a", "aac", "-b:a", "160k", "-shortest", "-movflags", "+faststart", out_path],
         stdin=subprocess.PIPE)
