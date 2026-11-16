@@ -1,5 +1,5 @@
 """Daily study leaderboard: Google Sheet -> HTML -> PNG (16:9) -> Telegram topic."""
-import csv, io, os, re, sys, html, datetime as dt
+import csv, io, os, re, sys, html, time, datetime as dt
 from zoneinfo import ZoneInfo
 import requests
 
@@ -309,8 +309,9 @@ def board_date(now=None):
 
 
 def tg(method, **kw):
-    r = requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/{method}", timeout=120, **kw)
-    print(method, r.status_code, r.text[:200])
+    t0 = time.time()
+    r = requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/{method}", timeout=60, **kw)
+    print(f"{method} -> {r.status_code} in {time.time() - t0:.1f}s: {r.text[:200]}")
     r.raise_for_status()
     return r.json()
 
@@ -477,6 +478,12 @@ def poll():
     set_menu()
     upd = tg("getUpdates", data={"timeout": 0, "allowed_updates": json.dumps(["message", "callback_query"])})["result"]
     actions = []
+    print(f"{len(upd)} pending update(s); admins = {sorted(ADMIN_IDS)}")
+    for u in upd:
+        m = u.get("message") or {}
+        cq = u.get("callback_query") or {}
+        print("  update", u["update_id"], "from", (m.get("from") or cq.get("from") or {}).get("id"),
+              "chat", (m.get("chat") or {}).get("id"), "text", repr((m.get("text") or cq.get("data") or "")[:30]))
 
     def add(a):
         if a not in actions:
